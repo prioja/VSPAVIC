@@ -9,121 +9,108 @@ from kivy.config import Config
 class CounterApp(App):
     def build(self):
 
-        # -------------------------
-        # FULLSCREEN MODE
-        # -------------------------
         Config.set('graphics', 'fullscreen', 'auto')
 
         self.cents = 0
 
-        # hold state
+        # state
         self.hold_event = None
-        self.step = 1
+        self.delay_event = None
+        self.holding = False
         self.direction = None
+        self.step = 1
 
-        # -------------------------
-        # LAYOUT
-        # -------------------------
-        layout = BoxLayout(
-            orientation='vertical',
-            padding=50,
-            spacing=50
-        )
+        layout = BoxLayout(orientation='vertical', padding=50, spacing=50)
 
-        # -------------------------
-        # BIG DISPLAY
-        # -------------------------
         self.label = Label(
             text=self.format_money(),
-            font_size=300
+            font_size=240
         )
         layout.add_widget(self.label)
 
-        # -------------------------
-        # BUTTON ROW
-        # -------------------------
-        button_row = BoxLayout(
-            spacing=120,
-            size_hint=(1, 0.4)
-        )
+        button_row = BoxLayout(spacing=120, size_hint=(1, 0.4))
 
-        minus_btn = Button(
-            text="-",
-            font_size=140
-        )
+        minus_btn = Button(text="-", font_size=140)
+        plus_btn = Button(text="+", font_size=140)
 
-        plus_btn = Button(
-            text="+",
-            font_size=140
-        )
-
-        # Bind touch events
-        plus_btn.bind(on_press=self.plus_press, on_release=self.stop_hold)
-        minus_btn.bind(on_press=self.minus_press, on_release=self.stop_hold)
+        plus_btn.bind(on_press=self.plus_press, on_release=self.release)
+        minus_btn.bind(on_press=self.minus_press, on_release=self.release)
 
         button_row.add_widget(minus_btn)
         button_row.add_widget(plus_btn)
-
         layout.add_widget(button_row)
 
         return layout
 
     # -------------------------
-    # FORMAT MONEY
+    # DISPLAY
     # -------------------------
     def format_money(self):
-        dollars = self.cents // 100
-        cents = self.cents % 100
-        return f"${dollars}.{cents:02d}"
+        return f"${self.cents // 100}.{self.cents % 100:02d}"
 
-    def update_display(self):
+    def update(self):
         self.label.text = self.format_money()
 
     # -------------------------
-    # HOLD LOGIC (ACCELERATING)
+    # HOLD START (DELAYED)
     # -------------------------
-    def start_hold(self, direction):
-        self.direction = direction
-        self.step = 1
+    def plus_press(self, instance):
+        self.direction = "up"
+        self.start_delay()
 
-        # run every 0.08s (~12.5x per second)
+    def minus_press(self, instance):
+        self.direction = "down"
+        self.start_delay()
+
+    def start_delay(self):
+        # wait before starting hold (detect tap vs hold)
+        self.delay_event = Clock.schedule_once(self.start_hold, 0.25)
+
+    def start_hold(self, dt):
+        self.holding = True
+        self.step = 1
         self.hold_event = Clock.schedule_interval(self.hold_update, 0.08)
 
+    # -------------------------
+    # HOLD UPDATE
+    # -------------------------
     def hold_update(self, dt):
         if self.direction == "up":
             self.cents += self.step
         else:
             self.cents = max(0, self.cents - self.step)
 
-        # accelerate over time
         self.step = min(self.step + 1, 50)
+        self.update()
 
-        self.update_display()
+    # -------------------------
+    # RELEASE (CLEAN STOP)
+    # -------------------------
+    def release(self, instance):
 
-    def stop_hold(self, instance):
-        # stop repeating hold
-        if self.hold_event:
-            self.hold_event.cancel()
-            self.hold_event = None
+        # cancel delayed hold start
+        if self.delay_event:
+            self.delay_event.cancel()
+            self.delay_event = None
 
-        # treat every interaction as at least 1 cent change on release
-        if self.direction == "up":
-            self.cents += 1
-        elif self.direction == "down":
-            self.cents = max(0, self.cents - 1)
+        # if we were holding → stop cleanly
+        if self.holding:
+            if self.hold_event:
+                self.hold_event.cancel()
+                self.hold_event = None
 
-        self.update_display()
+            self.holding = False
+
+        else:
+            # this was just a TAP → single increment
+            if self.direction == "up":
+                self.cents += 1
+            else:
+                self.cents = max(0, self.cents - 1)
+
+            self.update()
 
         self.direction = None
-
-    # -------------------------
-    # BUTTON EVENTS
-    # -------------------------
-    def plus_press(self, instance):
-        self.start_hold("up")
-
-    def minus_press(self, instance):
-        self.start_hold("down")
 
 
 if __name__ == "__main__":

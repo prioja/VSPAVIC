@@ -16,11 +16,11 @@ class firstBid(Screen):
 
         layout = BoxLayout(orientation="vertical", padding=30, spacing=20)
 
-        logo = Image(source="figs/logo.png", size_hint=(None, None), size=(150, 150), pos_hint={"center_x": 0.5})
+        logo = Image(source="figs/logo.png", size_hint=(None, None), size=(400, 400), pos_hint={"center_x": 0.5})
         header = Label(text = "Please put your initial bid", size_hint=(1,0.2), font_size = 60, bold=True)
         
-        self.display = Label(text=self.format_money(), font_size = 120, size_hint=(1, 0.2))
-        grid = GridLayout(cols=3, spacing=10, size_hint=(.8,0.65), pos_hint={"center_x": 0.5})
+        self.display = Label(text=self.format_money(), font_size = 200, size_hint=(1, 0.2))
+        grid = GridLayout(cols=3, spacing=10, size_hint=(.6,0.75), pos_hint={"center_x": 0.5})
         buttons = [
             "1", "2", "3",
             "4", "5", "6",
@@ -29,11 +29,11 @@ class firstBid(Screen):
         ]
 
         for b in buttons:
-            btn = Button(text=b, font_size=50)
+            btn = Button(text=b, font_size=70, bold=True)
             btn.bind(on_press=self.on_button_press)
             grid.add_widget(btn)
 
-        self.submit_btn = Button(text="SUBMIT",size_hint=(0.6, 0.15),pos_hint={"center_x": 0.5},font_size=50,disabled=True,background_normal="",background_color=(0, 0, 0, 0))
+        self.submit_btn = Button(text="SUBMIT",size_hint=(0.15, 0.15),pos_hint={"center_x": 0.5},font_size=60, bold=True, disabled=True,background_normal="",background_color=(0, 0, 0, 0))
         
         with self.submit_btn.canvas.before:
             self.btn_color = Color(0.5, 0.5, 0.5, 1)

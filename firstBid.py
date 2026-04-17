@@ -5,6 +5,7 @@ from kivy.uix.label import Label
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
+from kivy.uix.widget import Widget
 from kivy.uix.screenmanager import Screen, ScreenManager
 
 
@@ -14,12 +15,12 @@ class firstBid(Screen):
 
         self.cents = 0
 
-        layout = BoxLayout(orientation="vertical", padding=30, spacing=20)
+        layout = BoxLayout(orientation="vertical", padding=30, spacing=25)
 
         logo = Image(source="figs/logo.png", size_hint=(None, None), size=(400, 400), pos_hint={"center_x": 0.5})
-        header = Label(text = "Please put your initial bid", size_hint=(1,0.2), font_size = 60, bold=True)
+        header = Label(text = "PLEASE PLACE INITIAL BID", size_hint=(1,0.3), font_size = 60, bold=True)
         
-        self.display = Label(text=self.format_money(), font_size = 200, size_hint=(1, 0.2))
+        self.display = Label(text=self.format_money(), font_size = 400, size_hint=(1, 0.2))
         grid = GridLayout(cols=3, spacing=10, size_hint=(.6,0.75), pos_hint={"center_x": 0.5})
         buttons = [
             "1", "2", "3",
@@ -29,7 +30,7 @@ class firstBid(Screen):
         ]
 
         for b in buttons:
-            btn = Button(text=b, font_size=70, bold=True)
+            btn = Button(text=b, font_size=100, bold=True)
             btn.bind(on_press=self.on_button_press)
             grid.add_widget(btn)
 
@@ -44,6 +45,7 @@ class firstBid(Screen):
         layout.add_widget(logo)
         layout.add_widget(header)
         layout.add_widget(self.display)
+        layout.add_widget(Widget(size_hint_y=None, height=30))
         layout.add_widget(grid)
         layout.add_widget(self.submit_btn)
 

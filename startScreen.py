@@ -9,13 +9,14 @@ from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
 
-class BigOption(SpinnerOption):
+class BigOption(SpinnerOption):     # --- Spinner Menu Text ---
     def __init__(self, **kwargs):
+        
         super().__init__(**kwargs)
         self.font_size = 42
 
-# --- ROUNDED BUTTON ---
-class RoundedButton(Button):
+
+class RoundedButton(Button):        # --- Rounded Button ---
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
@@ -35,8 +36,9 @@ class RoundedButton(Button):
 
 class MainLayout(BoxLayout):
     def __init__(self, **kwargs):
+        
         super().__init__(orientation='vertical', spacing=50, padding=200, **kwargs)
-
+        
         # --- Image ---
         self.add_widget(Image(source='figs/welcome.png', size_hint=(1, 0.75), pos_hint={"center_x": 0.5}))
 
@@ -44,7 +46,7 @@ class MainLayout(BoxLayout):
         subject_layout = BoxLayout(size_hint=(.6, 0.1),pos_hint={"center_x": 0.5})
         subject_layout.add_widget(Label(text="Subject ID: \n(e.g. 001)", bold=True, font_size=60, size_hint=(0.4, 1)))
 
-        self.subject_input = TextInput(multiline=False, font_size=80, font_name="Roboto-Bold.ttf", size_hint=(0.6, 1))
+        self.subject_input = TextInput(multiline=False, font_size=60, font_name="Roboto-Bold.ttf", size_hint=(0.6, 1))
         subject_layout.add_widget(self.subject_input)
         self.add_widget(subject_layout)
 

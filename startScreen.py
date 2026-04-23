@@ -8,12 +8,14 @@ from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
+## clean up this formatting
 
 class BigOption(SpinnerOption):     # --- Spinner Menu Text ---
     def __init__(self, **kwargs):
         
         super().__init__(**kwargs)
         self.font_size = 42
+        self.bold = True
 
 
 class RoundedButton(Button):        # --- Rounded Button ---

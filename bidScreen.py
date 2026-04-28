@@ -7,15 +7,39 @@ from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 from kivy.uix.screenmanager import Screen, ScreenManager
 
+# ---------------- ROUND BUTTON ----------------
+class RoundedButton(Button):
+    def __init__(self, bg=(0.5, 0.5, 0.5, 1), radius=15, **kwargs):
+        super().__init__(**kwargs)
+
+        self.background_normal = ""
+        self.background_color = (0, 0, 0, 0)
+
+        with self.canvas.before:
+            self.color_instr = Color(*bg)
+            self.rect = RoundedRectangle(
+                pos=self.pos,
+                size=self.size,
+                radius=[radius]
+            )
+
+        self.bind(pos=self.update_rect, size=self.update_rect)
+
+    def update_rect(self, *args):
+        self.rect.pos = self.pos
+        self.rect.size = self.size
 
 class firstBid(Screen):
     def __init__(self, **kw):
         super().__init__(**kw)
 
         self.cents = 0
+        layout1 = BoxLayout(orientation="horizontal", size_hint=(1,0.2))
+        self.help_btn = RoundedButton(text="HELP",size_hint=(0.05, 0.3),font_size=50, bold=True, disabled=False,background_normal="",bg=(0.86, 0.08, 0.2, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
+        logo = Image(source="figs/logo.png", size_hint=(0.25, 1)) 
+        self.pause_btn = RoundedButton(text="PAUSE",size_hint=(0.05, 0.3),font_size=50, bold=True, disabled=False,background_normal="",bg=(0.965, 0.784, 0.208, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
 
-        layout1 = BoxLayout(orientation="vertical",size_hint=(1,1), padding=30, spacing=30)
-        logo = Image(source="figs/logo.png", size_hint=(0.25, 0.1), pos_hint={"center_x": 0.5})
+        layout2 = BoxLayout(orientation="vertical",size_hint=(1,0.8), padding=30, spacing=30)
         header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 45, bold=True)
         self.display = Label(text=self.format_money(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_ y": 0.2})
         grid = GridLayout(cols=3, spacing=10, size_hint=(.45,0.25), pos_hint={"center_x": 0.5})
@@ -38,14 +62,22 @@ class firstBid(Screen):
             self.submit_rect = RoundedRectangle(size=self.submit_btn.size,pos=self.submit_btn.pos,radius=[15])
         self.submit_btn.bind(pos=self.update_rect, size=self.update_rect)
 
+        
 # --------------------- build -------------------------
+        root = BoxLayout(orientation="vertical",padding=30)
+        layout1.add_widget(self.help_btn)
         layout1.add_widget(logo)
-        layout1.add_widget(header)
-        layout1.add_widget(self.display)
-        self.add_widget(layout1)
+        layout1.add_widget(self.pause_btn)
+        
 
-        layout1.add_widget(grid)
-        layout1.add_widget(self.submit_btn)
+        layout2.add_widget(header)
+        layout2.add_widget(self.display)
+        layout2.add_widget(grid)
+        layout2.add_widget(self.submit_btn)
+
+        root.add_widget(layout1)
+        root.add_widget(layout2)
+        self.add_widget(root)
 
 # --------------------- money formatting -------------------------
     def format_money(self):

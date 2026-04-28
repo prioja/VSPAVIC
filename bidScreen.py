@@ -35,12 +35,12 @@ class firstBid(Screen):
 
         self.cents = 0
         layout1 = BoxLayout(orientation="horizontal", size_hint=(1,0.2))
-        self.help_btn = RoundedButton(text="HELP",size_hint=(0.05, 0.3),font_size=50, bold=True, disabled=False,background_normal="",bg=(0.86, 0.08, 0.2, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
+        self.help_btn = RoundedButton(text="HELP",size_hint=(0.05, 0.4),font_size=60, bold=True, disabled=False,background_normal="",bg=(0.86, 0.08, 0.2, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
         logo = Image(source="figs/logo.png", size_hint=(0.25, 1)) 
-        self.pause_btn = RoundedButton(text="PAUSE",size_hint=(0.05, 0.3),font_size=50, bold=True, disabled=False,background_normal="",bg=(0.965, 0.784, 0.208, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
+        self.pause_btn = RoundedButton(text="PAUSE",size_hint=(0.05, 0.4),font_size=60, bold=True, disabled=False,background_normal="",bg=(0.965, 0.784, 0.208, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
 
         layout2 = BoxLayout(orientation="vertical",size_hint=(1,0.8), padding=30, spacing=30)
-        header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 45, bold=True)
+        header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 55, bold=True)
         self.display = Label(text=self.format_money(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_ y": 0.2})
         grid = GridLayout(cols=3, spacing=10, size_hint=(.45,0.25), pos_hint={"center_x": 0.5})
         buttons = [

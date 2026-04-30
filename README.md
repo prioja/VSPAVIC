@@ -42,6 +42,47 @@ Then use either `http://localhost:8001` or the WSL IP address from:
 hostname -I
 ```
 
+## Access From A Different PC
+
+To access the app from another PC on the same network, run the server so it listens on all network interfaces:
+
+```bash
+python3 main.py --host 0.0.0.0 --port 8001
+```
+
+Find the IP address of the machine running the server.
+
+On Linux or WSL:
+
+```bash
+hostname -I
+```
+
+On Windows PowerShell:
+
+```powershell
+ipconfig
+```
+
+Look for the active Wi-Fi or Ethernet IPv4 address. From the other PC, open this URL in a browser:
+
+```text
+http://<server-ip-address>:8001
+```
+
+For example:
+
+```text
+http://192.168.1.25:8001
+```
+
+If the page does not load:
+
+- Make sure both PCs are on the same network.
+- Make sure the server is running with `--host 0.0.0.0`.
+- Allow Python or port `8001` through the host machine's firewall.
+- If the server is running inside WSL, use the Windows host IP for another PC on the network. WSL localhost forwarding is usually only for the Windows machine itself, not other computers.
+
 ## App Flow
 
 1. Start page: enter Subject ID, Trial Condition, and Trial Number.

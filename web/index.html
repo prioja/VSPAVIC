@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VSPAVIC Experiment</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <img src="/figs/logo.png" alt="VSPAVIC" class="brand">
+      <nav class="page-nav" aria-label="Experiment pages">
+        <button data-page="start" class="nav-button active">Start</button>
+        <button data-page="bid" class="nav-button">Bid</button>
+        <button data-page="result" class="nav-button">Result</button>
+        <button data-page="end" class="nav-button">End</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="start" class="page active" aria-labelledby="start-title">
+        <div class="welcome-panel">
+          <img src="/figs/welcome.png" alt="Welcome" class="hero-image">
+          <form id="start-form" class="setup-form">
+            <label>
+              <span>Subject ID</span>
+              <input id="subject-id" name="subjectId" type="text" placeholder="001" autocomplete="off" required>
+            </label>
+            <label>
+              <span>Trial Condition</span>
+              <select id="trial-condition" name="trialCondition" required>
+                <option value="">Select Condition</option>
+                <option>TH ~ Take Home</option>
+                <option>PF ~ Proflex</option>
+                <option>VS ~ VSPA</option>
+              </select>
+            </label>
+            <label>
+              <span>Trial Number</span>
+              <select id="trial-number" name="trialNumber" required>
+                <option value="">Select Trial</option>
+                <option>1</option>
+                <option>2</option>
+              </select>
+            </label>
+            <button class="primary-action" type="submit">START</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="bid" class="page" aria-labelledby="bid-title">
+        <div class="top-actions">
+          <button class="danger-button" type="button">HELP</button>
+          <button class="warning-button" type="button">PAUSE</button>
+        </div>
+        <h1 id="bid-title">PLEASE PLACE BID</h1>
+        <output id="money-display" class="money-display">$0.00</output>
+        <div class="keypad" aria-label="Bid keypad">
+          <button>1</button>
+          <button>2</button>
+          <button>3</button>
+          <button>4</button>
+          <button>5</button>
+          <button>6</button>
+          <button>7</button>
+          <button>8</button>
+          <button>9</button>
+          <button>0</button>
+          <button data-key="clear">C</button>
+          <button data-key="delete">DEL</button>
+        </div>
+        <button id="submit-bid" class="submit-action" type="button" disabled>SUBMIT</button>
+      </section>
+
+      <section id="result" class="page result-page" aria-labelledby="result-title">
+        <img id="result-logo" src="/figs/won_logo.png" alt="" class="result-logo">
+        <img src="/figs/walking.gif" alt="Walking" class="walking-gif">
+        <h1 id="result-title">Winning Bid: $0.00</h1>
+        <div class="bid-results">
+          <div>
+            <span>Bid 2</span>
+            <strong id="robot-bid-1">$0.00</strong>
+          </div>
+          <div>
+            <span>Bid 3</span>
+            <strong id="robot-bid-2">$0.00</strong>
+          </div>
+        </div>
+      </section>
+
+      <section id="end" class="page end-page" aria-labelledby="end-title">
+        <h1 id="end-title">GAME OVER</h1>
+        <p>Thank you for playing.</p>
+        <img src="/figs/logo.png" alt="VSPAVIC" class="end-logo">
+        <strong id="total-payout" class="total-payout">Total Payout: $0.00</strong>
+        <section class="documentation-panel" aria-labelledby="documentation-title">
+          <div class="documentation-header">
+            <h2 id="documentation-title">Session Documentation</h2>
+            <div class="documentation-actions">
+              <button id="copy-documentation" class="secondary-action" type="button">Copy JSON</button>
+              <button id="download-documentation" class="secondary-action" type="button">Download JSON</button>
+            </div>
+          </div>
+          <pre id="documentation-json" class="documentation-json">{}</pre>
+        </section>
+        <button id="reset-app" class="secondary-action reset-action" type="button">Reset Session</button>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,3 +1,5 @@
+# This is the code prior to the split python to kv
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -8,7 +10,7 @@ from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
-## clean up this formatting
+
 
 class BigOption(SpinnerOption):     # --- Spinner Menu Text ---
     def __init__(self, **kwargs):

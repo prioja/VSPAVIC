@@ -1,0 +1,2 @@
+Time(mins),Timestamp,Subject Bid Amount,Won?,Winning Bid,Winning Payout Amnt,Total Subject Winnings,Winner Indices,Walking Robos,All Bids
+1,2026-04-15 03:28:10 PM,26.99,False,0.42,0.44,0.0,[1],[1],"[26.99, 0.42, 0.44]"

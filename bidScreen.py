@@ -1,11 +1,17 @@
-from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
-from kivy.graphics import Color, RoundedRectangle
-from kivy.uix.screenmanager import Screen, ScreenManager
+from kivy.graphics import Color, RoundedRectangle, Rectangle
+from kivy.uix.screenmanager import Screen
+from kivy.app import App
+from kivy.clock import Clock
+from kivy.metrics import dp
+
+from researchLink import sendMonitorEvent
 
 # ---------------- ROUND BUTTON ----------------
 class RoundedButton(Button):
@@ -29,19 +35,44 @@ class RoundedButton(Button):
         self.rect.pos = self.pos
         self.rect.size = self.size
 
-class firstBid(Screen):
+class BidScreen(Screen):
     def __init__(self, **kw):
         super().__init__(**kw)
 
         self.cents = 0
+        self.roundTicker = None
+        self.hasActiveRound = False
+        self._helpFlashEv = None
+        self._helpFlashCount = 0
+
         layout1 = BoxLayout(orientation="horizontal", size_hint=(1,0.2))
-        self.help_btn = RoundedButton(text="HELP",size_hint=(0.05, 0.4),font_size=60, bold=True, disabled=False,background_normal="",bg=(0.86, 0.08, 0.2, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
+        # size_hint_x alone can be a very narrow strip before layout settles; min width keeps
+        # HELP/PAUSE readable and matches first paint vs later frames.
+        _side_btn_kw = dict(
+            size_hint=(0.12, 0.4),
+            size_hint_min_x=dp(108),
+            font_size=60,
+            bold=True,
+            disabled=False,
+            background_normal="",
+            pos_hint={"center_y": 0.7},
+            color=(0, 0, 0, 1),
+        )
+        self.helpBtn = RoundedButton(text="HELP", bg=(0.86, 0.08, 0.2, 1), **_side_btn_kw)
         logo = Image(source="figs/logo.png", size_hint=(0.25, 1)) 
-        self.pause_btn = RoundedButton(text="PAUSE",size_hint=(0.05, 0.4),font_size=60, bold=True, disabled=False,background_normal="",bg=(0.965, 0.784, 0.208, 1),pos_hint={"center_y": 0.7}, color=(0, 0, 0, 1))
+        self.pauseBtn = RoundedButton(text="PAUSE", bg=(0.965, 0.784, 0.208, 1), **_side_btn_kw)
 
         layout2 = BoxLayout(orientation="vertical",size_hint=(1,0.8), padding=30, spacing=30)
         header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 55, bold=True)
-        self.display = Label(text=self.format_money(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_ y": 0.2})
+        self.timerLabel = Label(
+            text="Round: --:--",
+            font_size=34,
+            bold=True,
+            size_hint=(None, None),
+            pos_hint={"x": 0.02, "y": 0.02},
+        )
+        self.timerLabel.opacity = 0
+        self.display = Label(text=self.formatMoney(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_y": 0.2})
         grid = GridLayout(cols=3, spacing=10, size_hint=(.45,0.25), pos_hint={"center_x": 0.5})
         buttons = [
             "1", "2", "3",
@@ -52,48 +83,61 @@ class firstBid(Screen):
 
         for b in buttons:
             btn = Button(text=b, font_size=90, bold=True)
-            btn.bind(on_press=self.on_button_press)
+            btn.bind(on_press=self.onButtonPress)
             grid.add_widget(btn)
 
-        self.submit_btn = Button(text="SUBMIT",size_hint=(0.15, 0.05),pos_hint={"center_x": 0.5},font_size=50, bold=True, disabled=True,background_normal="",background_color=(0, 0, 0, 0))
+        self.submitBtn = Button(text="SUBMIT",size_hint=(0.15, 0.05),pos_hint={"center_x": 0.5},font_size=50, bold=True, disabled=True,background_normal="",background_color=(0, 0, 0, 0))
         
-        with self.submit_btn.canvas.before:
-            self.btn_color = Color(0.5, 0.5, 0.5, 1)
-            self.submit_rect = RoundedRectangle(size=self.submit_btn.size,pos=self.submit_btn.pos,radius=[15])
-        self.submit_btn.bind(pos=self.update_rect, size=self.update_rect)
+        with self.submitBtn.canvas.before:
+            self.btnColor = Color(0.5, 0.5, 0.5, 1)
+            self.submitRect = RoundedRectangle(size=self.submitBtn.size,pos=self.submitBtn.pos,radius=[15])
+        self.submitBtn.bind(pos=self.updateRect, size=self.updateRect)
+        self.submitBtn.bind(on_press=self.onSubmit)
 
         
 # --------------------- build -------------------------
-        root = BoxLayout(orientation="vertical",padding=30)
-        layout1.add_widget(self.help_btn)
+        body = BoxLayout(orientation="vertical", padding=30)
+        layout1.add_widget(self.helpBtn)
         layout1.add_widget(logo)
-        layout1.add_widget(self.pause_btn)
+        layout1.add_widget(self.pauseBtn)
         
 
         layout2.add_widget(header)
         layout2.add_widget(self.display)
         layout2.add_widget(grid)
-        layout2.add_widget(self.submit_btn)
+        layout2.add_widget(self.submitBtn)
 
-        root.add_widget(layout1)
-        root.add_widget(layout2)
-        self.add_widget(root)
+        body.add_widget(layout1)
+        body.add_widget(layout2)
+
+        self.overlay = FloatLayout()
+        self.overlay.add_widget(body)
+        self.overlay.add_widget(self.timerLabel)
+
+        self._buildHelpOverlay()
+        # helpRoot is attached only while HELP is open (see showHelp/hideHelp) so a
+        # full-screen layer cannot intercept touches when the overlay is "invisible".
+
+        self.helpBtn.bind(on_press=self.onHelpPressed)
+        self.pauseBtn.bind(on_press=self.onPausePressed)
+
+        self.add_widget(self.overlay)
 
 # --------------------- money formatting -------------------------
-    def format_money(self):
+    def formatMoney(self):
         return f"${self.cents //100}.{self.cents % 100:02d}"
 
-    def update_display(self):
-        self.display.text = self.format_money()
+    def updateDisplay(self):
+        self.display.text = self.formatMoney()
 
         if self.cents == 0:
-            self.submit_btn.disabled = True
-            self.btn_color.rgb = (0.5, 0.5, 0.5)  # gray
+            self.submitBtn.disabled = True
+            self.btnColor.rgb = (0.5, 0.5, 0.5)  # gray
         else:
-            self.submit_btn.disabled = False
-            self.btn_color.rgb = (0.2, 0.7, 0.2)  # green
+            self.submitBtn.disabled = False
+            self.btnColor.rgb = (0.2, 0.7, 0.2)  # green
 
-    def on_button_press(self, instance):# --------------------- keypad logic -------------------------
+    def onButtonPress(self, instance):# --------------------- keypad logic -------------------------
         text = instance.text
 
         if text == "C":
@@ -103,18 +147,284 @@ class firstBid(Screen):
         else:
             self.cents = self.cents * 10 + int(text)
 
-        self.update_display()
+        self.updateDisplay()
 
-    def update_rect(self, *args): # round button
-        self.submit_rect.pos = self.submit_btn.pos
-        self.submit_rect.size = self.submit_btn.size
+    def updateRect(self, *args): # round button
+        self.submitRect.pos = self.submitBtn.pos
+        self.submitRect.size = self.submitBtn.size
 
-class MyApp(App):
-    def build(self):
+    def onSubmit(self, *_):
+        bid = self.cents / 100.0
+        app = App.get_running_app()
+        if hasattr(app, "controller"):
+            st = getattr(app, "state", None)
+            # First round after START: one submit finalizes immediately.
+            if st is not None and getattr(st, "pendingInstantRound", False):
+                app.controller.submitBidForCurrentRound(bid)
+                result = app.controller.finalizeRound()
+                print("Round finalized (instant first round):", result)
+                self.resetKeypad()
+                self.goToResult()
+                return
 
-        self.title = "VSPAVIC Experiment"
-        return firstBid()
+            # Timed rounds: Submit can be pressed multiple times; only the last one counts.
+            app.controller.submitBidForCurrentRound(bid)
+            self.hasActiveRound = True
+            self.startTickerIfNeeded()
+            print("Submitted (latest) bid:", bid)
+        else:
+            print("Submitted bid:", bid)
 
+    def resetKeypad(self):
+        self.cents = 0
+        self.updateDisplay()
 
-if __name__ == "__main__":
-    MyApp().run()
+    def goToResult(self):
+        root = App.get_running_app().root
+        if hasattr(root, "has_screen") and root.has_screen("result"):
+            root.current = "result"
+
+    def startTickerIfNeeded(self):
+        if self.roundTicker is not None:
+            return
+        self.roundTicker = Clock.schedule_interval(self.onTick, 0.1)
+
+    def stopTicker(self):
+        if self.roundTicker is None:
+            return
+        self.roundTicker.cancel()
+        self.roundTicker = None
+
+    def _buildHelpOverlay(self):
+        self.helpRoot = FloatLayout(opacity=0, disabled=True)
+
+        dimmer = Widget(size_hint=(1, 1))
+        with dimmer.canvas.before:
+            Color(0, 0, 0, 0.35)
+            self.helpDimmerRect = Rectangle(pos=dimmer.pos, size=dimmer.size)
+        dimmer.bind(
+            pos=lambda *_: setattr(self.helpDimmerRect, "pos", dimmer.pos),
+            size=lambda *_: setattr(self.helpDimmerRect, "size", dimmer.size),
+        )
+
+        def dimmer_touch(widget, touch):
+            # touch.x/y are window coords; collide_point expects local coords.
+            if not widget.collide_point(*widget.to_widget(touch.x, touch.y, relative=False)):
+                return False
+            if self.helpCard.collide_point(
+                *self.helpCard.to_widget(touch.x, touch.y, relative=False)
+            ):
+                return False
+            self.hideHelp()
+            return True
+
+        dimmer.bind(on_touch_down=dimmer_touch)
+
+        self.helpCard = BoxLayout(
+            orientation="vertical",
+            padding=24,
+            spacing=18,
+            size_hint=(0.72, 0.38),
+            pos_hint={"center_x": 0.5, "center_y": 0.55},
+        )
+        with self.helpCard.canvas.before:
+            Color(1, 1, 1, 0.96)
+            self.helpCardBg = RoundedRectangle(
+                pos=self.helpCard.pos,
+                size=self.helpCard.size,
+                radius=[18],
+            )
+        with self.helpCard.canvas.after:
+            self.helpFlashColor = Color(0.86, 0.08, 0.2, 0.0)
+            self.helpFlashOverlay = RoundedRectangle(
+                pos=self.helpCard.pos,
+                size=self.helpCard.size,
+                radius=[18],
+            )
+        self.helpCard.bind(
+            pos=self._syncHelpCardGfx,
+            size=self._syncHelpCardGfx,
+        )
+
+        title = Label(
+            text="Researcher notified",
+            font_size=44,
+            bold=True,
+            color=(0.1, 0.1, 0.1, 1),
+            size_hint=(1, None),
+            height=56,
+        )
+        body = Label(
+            text="Please wait — a researcher will assist you shortly.\n\nTap outside this box or press OK to close.",
+            font_size=30,
+            color=(0.15, 0.15, 0.15, 1),
+            valign="middle",
+            halign="center",
+            text_size=(None, None),
+        )
+        body.bind(size=lambda inst, s: setattr(inst, "text_size", (s[0] - 10, s[1])))
+
+        ok = RoundedButton(text="OK", font_size=44, bold=True, bg=(0.2, 0.45, 0.85, 1), size_hint=(1, 0.22))
+        ok.bind(on_press=lambda *_: self.hideHelp())
+
+        self.helpCard.add_widget(title)
+        self.helpCard.add_widget(body)
+        self.helpCard.add_widget(ok)
+
+        self.helpRoot.add_widget(dimmer)
+        self.helpRoot.add_widget(self.helpCard)
+
+    def _syncHelpCardGfx(self, *args):
+        self.helpCardBg.pos = self.helpCard.pos
+        self.helpCardBg.size = self.helpCard.size
+        self.helpFlashOverlay.pos = self.helpCard.pos
+        self.helpFlashOverlay.size = self.helpCard.size
+
+    def _cancelHelpFlash(self):
+        if self._helpFlashEv is not None:
+            self._helpFlashEv.cancel()
+            self._helpFlashEv = None
+        self.helpFlashColor.a = 0.0
+
+    def _pulse_help_flash(self, *_):
+        self._helpFlashCount += 1
+        self.helpFlashColor.a = 0.55 if (self._helpFlashCount % 2) else 0.0
+        if self._helpFlashCount >= 8:
+            self._cancelHelpFlash()
+
+    def showHelp(self):
+        if self.helpRoot.parent is None:
+            self.overlay.add_widget(self.helpRoot)
+        self.helpRoot.disabled = False
+        self.helpRoot.opacity = 1
+        self._helpFlashCount = 0
+        self._cancelHelpFlash()
+        self._helpFlashEv = Clock.schedule_interval(self._pulse_help_flash, 0.12)
+
+    def hideHelp(self):
+        self._cancelHelpFlash()
+        self.helpRoot.opacity = 0
+        self.helpRoot.disabled = True
+        if self.helpRoot.parent is not None:
+            self.helpRoot.parent.remove_widget(self.helpRoot)
+
+    def _log_ui_event_csv(self, app, event, detail=None):
+        logger = getattr(app, "auctionCsv", None)
+        st = getattr(app, "state", None)
+        if logger is None or st is None:
+            return
+        logger.appendUiEvent(st, event, detail)
+
+    def onHelpPressed(self, *_):
+        app = App.get_running_app()
+        st = getattr(app, "state", None)
+        payload = {}
+        if st is not None:
+            payload = {
+                "subjectId": getattr(st, "subjectId", None),
+                "trialCond": getattr(st, "trialCond", None),
+                "trialNum": getattr(st, "trialNum", None),
+                "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None),
+                "roundIndex": getattr(st, "roundIndex", None),
+            }
+        sendMonitorEvent("help_pressed", payload)
+        self._log_ui_event_csv(app, "help_pressed", payload)
+        self.showHelp()
+
+    def onPausePressed(self, *_):
+        app = App.get_running_app()
+        if not hasattr(app, "controller"):
+            return
+        st = getattr(app, "state", None)
+        if st is not None and getattr(st, "pendingInstantRound", False):
+            return
+        if app.controller.getSecondsRemaining() is None:
+            return
+
+        was_paused = bool(getattr(st, "auctionPaused", False)) if st is not None else False
+        if not app.controller.toggleAuctionPause():
+            return
+        self.updatePauseButton()
+        now_paused = bool(getattr(st, "auctionPaused", False)) if st is not None else False
+        pause_detail = {
+            "secondsRemaining": app.controller.getSecondsRemaining(),
+            "toggledFromPaused": was_paused,
+        }
+        sendMonitorEvent(
+            "auction_paused" if now_paused else "auction_resumed",
+            pause_detail,
+        )
+        self._log_ui_event_csv(
+            app,
+            "auction_paused" if now_paused else "auction_resumed",
+            pause_detail,
+        )
+
+    def updatePauseButton(self):
+        app = App.get_running_app()
+        st = getattr(app, "state", None)
+        # Keep PAUSE visually the same as HELP (never use Button.disabled — Kivy greys it).
+        # When pausing is not available, onPausePressed is a no-op.
+        self.pauseBtn.disabled = False
+        if not hasattr(app, "controller") or st is None:
+            self.pauseBtn.text = "PAUSE"
+            return
+        if getattr(st, "pendingInstantRound", False) or app.controller.getSecondsRemaining() is None:
+            self.pauseBtn.text = "PAUSE"
+            return
+        self.pauseBtn.text = "RESUME" if getattr(st, "auctionPaused", False) else "PAUSE"
+
+    def onTick(self, *_):
+        app = App.get_running_app()
+        if not hasattr(app, "controller"):
+            return
+        st = getattr(app, "state", None)
+        if st is not None and getattr(st, "pendingInstantRound", False):
+            return
+
+        remaining = app.controller.getSecondsRemaining()
+        if remaining is None:
+            self.timerLabel.text = "Round: --:--"
+            self.timerLabel.opacity = 0
+            self.updatePauseButton()
+            return
+
+        self.timerLabel.opacity = 1
+        mins = int(remaining // 60)
+        secs = int(remaining % 60)
+        if st is not None and getattr(st, "auctionPaused", False):
+            self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
+        else:
+            self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
+        self.updatePauseButton()
+
+        if remaining <= 0.0 and self.hasActiveRound and not (st is not None and getattr(st, "auctionPaused", False)):
+            self.hasActiveRound = False
+            self.stopTicker()
+            self.timerLabel.opacity = 0
+            result = app.controller.finalizeRound()
+            print("Round finalized:", result)
+            self.resetKeypad()
+            self.goToResult()
+
+    def on_pre_enter(self, *_):
+        app = App.get_running_app()
+        self.hideHelp()
+        if hasattr(app, "controller"):
+            app.controller.onBidScreenEntered()
+
+        # Hiding timer until a timed round actually begins.
+        self.stopTicker()
+        self.hasActiveRound = False
+
+        remaining = app.controller.getSecondsRemaining() if hasattr(app, "controller") else None
+        if remaining is None:
+            self.timerLabel.text = "Round: --:--"
+            self.timerLabel.opacity = 0
+            self.updatePauseButton()
+            return
+
+        self.hasActiveRound = True
+        self.timerLabel.opacity = 1
+        self.startTickerIfNeeded()
+        self.updatePauseButton()

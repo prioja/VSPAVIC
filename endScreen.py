@@ -1,36 +1,61 @@
+from pathlib import Path
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.label import Label
 from kivy.uix.image import Image
+from kivy.uix.label import Label
+from kivy.uix.screenmanager import Screen
 
 
-
-
-class MainLayout(BoxLayout):
+class EndScreen(Screen):
     def __init__(self, **kwargs):
-        super().__init__(orientation='vertical', spacing=30, padding=150, **kwargs)
+        super().__init__(**kwargs)
 
-        self.totalsubjPayout = 3.24
-        layout = BoxLayout(orientation="vertical", padding=30, spacing=60,size_hint=(1, 0.6))
-        header1 = Label(text = "GAME OVER", size_hint=(1,0.1), font_size = 120, bold=True, pos_hint={"center_x": 0.5})
-        header2 = Label(text = "Thank you for playing!", size_hint=(1,0.1), font_size = 60, bold=True, pos_hint={"center_x": 0.5})
-        logo = Image(source='figs/logo.png', size_hint=(1, 0.8),size=(500,500))
-        payoutLayout = BoxLayout(orientation = "horizontal",spacing=20,padding=30,size_hint=(0.3, 0.2), pos_hint={"center_x": 0.5})
-        total = Label(text=f"Total Payout: ${self.totalsubjPayout:.2f}", font_size = 120, bold=True)
+        root = BoxLayout(orientation="vertical", spacing=30, padding=150)
 
-        layout.add_widget(header1)  
-        layout.add_widget(header2)
-        layout.add_widget(logo)   
-        self.add_widget(layout)
-        payoutLayout.add_widget(total)
-        self.add_widget(payoutLayout)
+        title = Label(
+            text="GAME OVER",
+            font_size=120,
+            bold=True,
+            size_hint=(1, 0.18),
+            halign="center",
+            valign="middle",
+        )
+        title.bind(size=title.setter("text_size"))
 
+        thanks = Label(
+            text="Thank you for playing!",
+            font_size=60,
+            bold=True,
+            size_hint=(1, 0.12),
+            halign="center",
+            valign="middle",
+        )
+        thanks.bind(size=thanks.setter("text_size"))
 
-class MyApp(App):
-    def build(self):
-        self.title = "VSPAVIC Experiment"
-        return MainLayout()
+        baseDir = Path(__file__).resolve().parent
+        logo = Image(source=str(baseDir / "figs" / "logo.png"), size_hint=(1, 0.45), allow_stretch=True, keep_ratio=True)
 
+        self.totalLabel = Label(
+            text="Total Payout: $0.00",
+            font_size=110,
+            bold=True,
+            size_hint=(1, 0.25),
+            halign="center",
+            valign="middle",
+        )
+        self.totalLabel.bind(size=self.totalLabel.setter("text_size"))
 
-if __name__ == "__main__":
-    MyApp().run()
+        root.add_widget(title)
+        root.add_widget(thanks)
+        root.add_widget(logo)
+        root.add_widget(self.totalLabel)
+
+        self.add_widget(root)
+        self.bind(on_pre_enter=self.refresh)
+
+    def refresh(self, *_):
+        app = App.get_running_app()
+        st = getattr(app, "state", None)
+        total = 0.0 if st is None else float(getattr(st, "totalPayout", 0.0) or 0.0)
+        self.totalLabel.text = f"Total Payout: ${total:.2f}"

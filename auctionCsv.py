@@ -71,6 +71,20 @@ def _cell(value):
     return value
 
 
+def _excel_text(value):
+    """
+    Prevent Excel from displaying ####### for narrow timestamp columns by forcing
+    text rendering while keeping the value human-readable in the CSV.
+    """
+    if value is None:
+        return ""
+    s = str(value)
+    if not s:
+        return ""
+    # Excel interprets ="..." as a formula returning text.
+    return f'="{s}"'
+
+
 class AuctionCsvLogger:
     """One CSV per session; one row per finalized round.
     UI events (HELP / PAUSE) append to a sibling ``*_events.csv`` file.
@@ -131,7 +145,7 @@ class AuctionCsvLogger:
         path = buildEventsCsvPath(state, self.dataDir)
         wall_ts = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
         row = [
-            wall_ts,
+            _excel_text(wall_ts),
             event,
             getattr(state, "roundIndex", ""),
             int(bool(getattr(state, "pendingInstantRound", False))),
@@ -149,7 +163,7 @@ class AuctionCsvLogger:
                     w.writerow(["subjectId", state.subjectId.strip()])
                     w.writerow(["trialCondition", state.trialCond])
                     w.writerow(["trialNumber", state.trialNum])
-                    w.writerow(["sessionStartTimestamp", _cell(getattr(state, "sessionStartTimestamp", ""))])
+                    w.writerow(["sessionStartTimestamp", _excel_text(getattr(state, "sessionStartTimestamp", ""))])
                     w.writerow(["logType", "ui_events"])
                     w.writerow([])
                     w.writerow(self.EVENT_HEADERS)
@@ -178,8 +192,8 @@ class AuctionCsvLogger:
 
         row = [
             result.get("roundIndex", ""),
-            _cell(result.get("roundStartTimestamp")),
-            _cell(result.get("roundEndTimestamp", result.get("timestamp", ""))),
+            _excel_text(result.get("roundStartTimestamp")),
+            _excel_text(result.get("roundEndTimestamp", result.get("timestamp", ""))),
             result.get("humanBid", ""),
             result.get("humanWon", ""),
             result.get("lowestBid", ""),
@@ -200,7 +214,7 @@ class AuctionCsvLogger:
                     w.writerow(["subjectId", state.subjectId.strip()])
                     w.writerow(["trialCondition", state.trialCond])
                     w.writerow(["trialNumber", state.trialNum])
-                    w.writerow(["sessionStartTimestamp", _cell(result.get("sessionStartTimestamp"))])
+                    w.writerow(["sessionStartTimestamp", _excel_text(result.get("sessionStartTimestamp"))])
                     w.writerow(["auctionType", "Vickrey second-price (lowest bid wins)"])
                     w.writerow([])  # blank line between metadata and table
 

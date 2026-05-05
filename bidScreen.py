@@ -44,6 +44,7 @@ class BidScreen(Screen):
         self.hasActiveRound = False
         self._helpFlashEv = None
         self._helpFlashCount = 0
+        self._lastRoundStartPerf = None
 
         layout1 = BoxLayout(orientation="horizontal", size_hint=(1,0.2))
         # size_hint_x alone can be a very narrow strip before layout settles; min width keeps
@@ -154,13 +155,25 @@ class BidScreen(Screen):
         self.submitRect.size = self.submitBtn.size
 
     def onSubmit(self, *_):
-        bid = self.cents / 100.0
         app = App.get_running_app()
+        st = getattr(app, "state", None)
+        prev_round_start = None if st is None else getattr(st, "roundStartPerf", None)
+
+        bid = self.cents / 100.0
         if hasattr(app, "controller"):
-            st = getattr(app, "state", None)
             # First round after START: one submit finalizes immediately.
             if st is not None and getattr(st, "pendingInstantRound", False):
                 app.controller.submitBidForCurrentRound(bid)
+                self._emit_event(
+                    app,
+                    "bid_submitted",
+                    {
+                        "label": "BID SUBMITTED",
+                        "bid": bid,
+                        "phase": "instant_round",
+                        "roundIndex": getattr(st, "roundIndex", None),
+                    },
+                )
                 result = app.controller.finalizeRound()
                 print("Round finalized (instant first round):", result)
                 self.resetKeypad()
@@ -171,6 +184,32 @@ class BidScreen(Screen):
             app.controller.submitBidForCurrentRound(bid)
             self.hasActiveRound = True
             self.startTickerIfNeeded()
+            self._emit_event(
+                app,
+                "bid_submitted",
+                {
+                    "label": "BID SUBMITTED",
+                    "bid": bid,
+                    "phase": "timed_round",
+                    "roundIndex": getattr(st, "roundIndex", None),
+                    "secondsRemaining": app.controller.getSecondsRemaining(),
+                },
+            )
+
+            # If this submit started the round (i.e., first submit of the round),
+            # robot bids are now locked; emit them once.
+            new_round_start = None if st is None else getattr(st, "roundStartPerf", None)
+            if prev_round_start is None and new_round_start is not None:
+                self._emit_event(
+                    app,
+                    "round_started",
+                    {
+                        "label": "ROUND STARTED",
+                        "roundIndex": getattr(st, "roundIndex", None),
+                        "roundStartTimestamp": getattr(st, "roundStartTimestamp", None),
+                        "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []),
+                    },
+                )
             print("Submitted (latest) bid:", bid)
         else:
             print("Submitted bid:", bid)
@@ -247,7 +286,7 @@ class BidScreen(Screen):
         )
 
         title = Label(
-            text="Researcher notified",
+            text="ALERT",
             font_size=44,
             bold=True,
             color=(0.1, 0.1, 0.1, 1),
@@ -255,7 +294,7 @@ class BidScreen(Screen):
             height=56,
         )
         body = Label(
-            text="Please wait — a researcher will assist you shortly.\n\nTap outside this box or press OK to close.",
+            text="A researcher has been notified.\n\nPlease wait for assistance.\n\nTap outside this box or press OK to close.",
             font_size=30,
             color=(0.15, 0.15, 0.15, 1),
             valign="middle",
@@ -315,20 +354,27 @@ class BidScreen(Screen):
             return
         logger.appendUiEvent(st, event, detail)
 
+    def _emit_event(self, app, event, detail=None):
+        # 1) tablet -> researcher terminal (optional link)
+        sendMonitorEvent(event, detail or {})
+        # 2) local per-session events CSV
+        self._log_ui_event_csv(app, event, detail or {})
+
     def onHelpPressed(self, *_):
         app = App.get_running_app()
         st = getattr(app, "state", None)
         payload = {}
         if st is not None:
             payload = {
+                "label": "ALERT",
+                "message": "Participant pressed HELP",
                 "subjectId": getattr(st, "subjectId", None),
                 "trialCond": getattr(st, "trialCond", None),
                 "trialNum": getattr(st, "trialNum", None),
                 "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None),
                 "roundIndex": getattr(st, "roundIndex", None),
             }
-        sendMonitorEvent("help_pressed", payload)
-        self._log_ui_event_csv(app, "help_pressed", payload)
+        self._emit_event(app, "help_pressed", payload)
         self.showHelp()
 
     def onPausePressed(self, *_):
@@ -347,18 +393,12 @@ class BidScreen(Screen):
         self.updatePauseButton()
         now_paused = bool(getattr(st, "auctionPaused", False)) if st is not None else False
         pause_detail = {
+            "label": "PAUSED EXPERIMENT" if now_paused else "RESUMED EXPERIMENT",
+            "message": "Auction timer paused" if now_paused else "Auction timer resumed",
             "secondsRemaining": app.controller.getSecondsRemaining(),
             "toggledFromPaused": was_paused,
         }
-        sendMonitorEvent(
-            "auction_paused" if now_paused else "auction_resumed",
-            pause_detail,
-        )
-        self._log_ui_event_csv(
-            app,
-            "auction_paused" if now_paused else "auction_resumed",
-            pause_detail,
-        )
+        self._emit_event(app, "auction_paused" if now_paused else "auction_resumed", pause_detail)
 
     def updatePauseButton(self):
         app = App.get_running_app()
@@ -416,6 +456,22 @@ class BidScreen(Screen):
         # Hiding timer until a timed round actually begins.
         self.stopTicker()
         self.hasActiveRound = False
+
+        # If BidScreen entry started a timed round (round 2+), robot bids are now locked.
+        st = getattr(app, "state", None)
+        started_now = st is not None and getattr(st, "roundStartPerf", None) is not None and self._lastRoundStartPerf != getattr(st, "roundStartPerf", None)
+        if started_now and not getattr(st, "pendingInstantRound", False):
+            self._emit_event(
+                app,
+                "round_started",
+                {
+                    "label": "ROUND STARTED",
+                    "roundIndex": getattr(st, "roundIndex", None),
+                    "roundStartTimestamp": getattr(st, "roundStartTimestamp", None),
+                    "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []),
+                },
+            )
+        self._lastRoundStartPerf = None if st is None else getattr(st, "roundStartPerf", None)
 
         remaining = app.controller.getSecondsRemaining() if hasattr(app, "controller") else None
         if remaining is None:

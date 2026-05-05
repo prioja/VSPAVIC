@@ -18,8 +18,8 @@ class TreadmillHardware:
         self,
         viconPcIp=None,
         enabled=None,
-        walkSpeedMs=1.2,
-        walkAccelMs2=0.1,
+        walkSpeedMs=1.5,
+        walkAccelMs2=0.3,
         stopAccelMs2=0.8,
         defaultInclineDeg=0.0,
     ):

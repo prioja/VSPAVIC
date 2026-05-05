@@ -27,9 +27,27 @@ class ExperimentController:
         self.roundSeconds = 120.0
 
         # Robo-bidder parameters (from your terminal script)
-        k = 0.4395073979128712
-        b = 0.05735650555767768
-        self.roboModel = roboModel(k, b, 2)
+        self.robo_k = 0.4395073979128712
+        self.robo_b = 0.05735650555767768
+        self.robo_n = 2
+        self.roboModel = roboModel(self.robo_k, self.robo_b, self.robo_n)
+
+    def getSessionConfigSnapshot(self):
+        """
+        A small, JSON-serializable config snapshot suitable for monitor/event logging.
+        """
+        st = self.state
+        return {
+            "roundSeconds": float(getattr(self, "roundSeconds", 0.0) or 0.0),
+            "totalRounds": getattr(st, "totalRounds", None),
+            "auctionType": "Vickrey second-price (lowest bid wins)",
+            "roboModel": {
+                "name": type(self.roboModel).__name__,
+                "count": int(getattr(self, "robo_n", 0) or 0),
+                "k": float(getattr(self, "robo_k", 0.0) or 0.0),
+                "b": float(getattr(self, "robo_b", 0.0) or 0.0),
+            },
+        }
 
     def startIfNeeded(self):
         if self.state.auctionStarted:

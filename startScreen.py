@@ -16,6 +16,8 @@ from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
+from researchLink import sendMonitorEvent
+
 
 
 class BigOption(SpinnerOption):  # Spinner menu text
@@ -129,6 +131,24 @@ class StartScreen(Screen):
             app.state.sessionStartTimestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
         if hasattr(app, "controller"):
             app.controller.markFirstRoundInstant()
+
+        # Notify researcher + log to events CSV once the session metadata exists.
+        st = getattr(app, "state", None)
+        cfg = app.controller.getSessionConfigSnapshot() if hasattr(app, "controller") else {}
+        session_payload = {
+            "label": "SESSION STARTED",
+            "message": "Participant pressed START",
+            "subjectId": getattr(st, "subjectId", None) if st else None,
+            "trialCond": getattr(st, "trialCond", None) if st else None,
+            "trialNum": getattr(st, "trialNum", None) if st else None,
+            "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None) if st else None,
+            "config": cfg,
+        }
+        sendMonitorEvent("session_started", session_payload)
+        logger = getattr(app, "auctionCsv", None)
+        if logger is not None and st is not None:
+            logger.appendUiEvent(st, "session_started", session_payload)
+
         hardware = getattr(app, "hardware", None)
         if hardware is not None and getattr(hardware, "enabled", False):
             hardware.prepareSession()

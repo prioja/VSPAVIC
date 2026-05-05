@@ -1,3 +1,6 @@
 kivy_venv/
 __pycache__/
 *.pyc
+.DS_Store
+.kivy_work
+.DS_Store

@@ -207,6 +207,12 @@ def main():
     p.add_argument("--send-config", action="store_true", help="Prompt and send treadmill/stiffness to tablet.")
     p.add_argument("--tablet", type=str, default="", help="Tablet IP/hostname for --send-config.")
     p.add_argument("--tablet-port", type=int, default=6000, help="Tablet port for --send-config (default 6000).")
+    p.add_argument(
+        "--condition",
+        type=str,
+        default="",
+        help="Optional condition code (VS/PF/TH). If VS, will prompt for Preferred Stiffness.",
+    )
     args = p.parse_args()
     if args.listen:
         listenLoop(args.port, raw=args.raw, show_ip=args.show_ip)
@@ -214,7 +220,10 @@ def main():
         if not args.tablet:
             raise SystemExit("--tablet is required with --send-config")
         treadmill_speed = input("Treadmill Speed: ").strip()
-        preferred_stiffness = input("Preferred Stiffness (N/mm): ").strip()
+        cond = (args.condition or input("Condition (VS/PF/TH) [optional]: ").strip()).upper()
+        preferred_stiffness = ""
+        if cond.startswith("VS"):
+            preferred_stiffness = input("Preferred Stiffness (N/mm): ").strip()
         sendResearcherConfig(
             args.tablet,
             args.tablet_port,

@@ -108,6 +108,59 @@ def _pretty_line(msg):
     return f"[{ts}] {head}"
 
 
+def sendResearcherConfig(tablet_host, tablet_port=6000, treadmill_speed="", preferred_stiffness=""):
+    payload = {
+        "treadmillSpeedSetting": treadmill_speed,
+        "preferredStiffnessNPerMm": preferred_stiffness,
+    }
+    msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
+    line = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
+    s = socket.create_connection((tablet_host, int(tablet_port)), timeout=3.0)
+    try:
+        s.sendall(line)
+    finally:
+        s.close()
+
+
+def startConfigListener(on_payload, port=6000, host="0.0.0.0"):
+    """
+    Tablet-side listener so the researcher machine can send session settings (e.g. treadmill
+    speed and preferred stiffness) at launch.
+    """
+    def _run():
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind((host, int(port)))
+        srv.listen(5)
+        print(f"researchLink: config listener on {host}:{port}")
+        while True:
+            conn, _addr = srv.accept()
+            try:
+                data = conn.recv(4096)
+                if not data:
+                    continue
+                text = data.decode("utf-8", errors="replace")
+                for line in text.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except Exception:
+                        continue
+                    if msg.get("event") != "researcher_config":
+                        continue
+                    payload = msg.get("payload") or {}
+                    try:
+                        on_payload(payload)
+                    except Exception as e:
+                        print("researchLink: config apply failed:", e)
+            finally:
+                conn.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def listenLoop(port, raw=False, show_ip=False):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -151,9 +204,24 @@ def main():
     p.add_argument("--port", type=int, default=5999)
     p.add_argument("--raw", action="store_true", help="Print raw JSON lines (no pretty formatting).")
     p.add_argument("--show-ip", action="store_true", help="Prefix lines with (ip, port).")
+    p.add_argument("--send-config", action="store_true", help="Prompt and send treadmill/stiffness to tablet.")
+    p.add_argument("--tablet", type=str, default="", help="Tablet IP/hostname for --send-config.")
+    p.add_argument("--tablet-port", type=int, default=6000, help="Tablet port for --send-config (default 6000).")
     args = p.parse_args()
     if args.listen:
         listenLoop(args.port, raw=args.raw, show_ip=args.show_ip)
+    elif args.send_config:
+        if not args.tablet:
+            raise SystemExit("--tablet is required with --send-config")
+        treadmill_speed = input("Treadmill Speed: ").strip()
+        preferred_stiffness = input("Preferred Stiffness (N/mm): ").strip()
+        sendResearcherConfig(
+            args.tablet,
+            args.tablet_port,
+            treadmill_speed=treadmill_speed,
+            preferred_stiffness=preferred_stiffness,
+        )
+        print("Sent researcher_config.")
     else:
         print("Nothing to do. Use --listen, or import sendMonitorEvent() from your app.")
 

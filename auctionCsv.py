@@ -48,8 +48,8 @@ def buildSessionPaths(state, dataDir=DATA_DIR):
         trial = "X"
 
     condTrial = f"{cc}{trial}"
-    auctionFilename = f"VSPAVIC{subj}_A_{condTrial}.csv"
-    hrFilename = f"VSPAVIC{subj}_HR_{condTrial}.csv"
+    auctionFilename = f"VSPAVIC{subj}_{condTrial}_A.csv"
+    hrFilename = f"VSPAVIC{subj}_{condTrial}_HR.csv"
 
     os.makedirs(dataDir, exist_ok=True)
     auctionPath = os.path.join(dataDir, auctionFilename)
@@ -97,7 +97,7 @@ def _split_session_timestamp(ts):
         return "", ""
     try:
         dt = datetime.strptime(s, "%Y-%m-%d %I:%M:%S %p")
-        return dt.strftime("%Y-%m-%d"), dt.strftime("%I:%M:%S %p")
+        return dt.strftime("%m-%d-%Y"), dt.strftime("%I:%M:%S %p")
     except Exception:
         parts = s.split()
         if len(parts) >= 2:
@@ -126,7 +126,6 @@ class AuctionCsvLogger:
         "Lowest Bid",
         "Vickrey Price",
         "Total Winnings",
-        "Treadmill Speed",
         "Distance",
     ]
 
@@ -140,7 +139,6 @@ class AuctionCsvLogger:
         "$",
         "$",
         "$",
-        "m/s",
         "m",
     ]
 
@@ -192,6 +190,8 @@ class AuctionCsvLogger:
                     _d, _t = _split_session_timestamp(getattr(state, "sessionStartTimestamp", ""))
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
+                    w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
+                    w.writerow(["Preferred Stiffness (N/mm):", _cell(getattr(state, "preferredStiffnessNPerMm", ""))])
                     w.writerow(["logType", "ui_events"])
                     w.writerow([])
                     w.writerow(self.EVENT_HEADERS)
@@ -227,7 +227,6 @@ class AuctionCsvLogger:
             result.get("lowestBid", ""),
             result.get("payout", ""),
             result.get("totalPayout", ""),
-            _cell(treadmillSpeedMs),
             _cell(treadmillDistanceM),
         ]
 
@@ -245,6 +244,8 @@ class AuctionCsvLogger:
                     _d, _t = _split_session_timestamp(result.get("sessionStartTimestamp"))
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
+                    w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
+                    w.writerow(["Preferred Stiffness (N/mm):", _cell(getattr(state, "preferredStiffnessNPerMm", ""))])
                     w.writerow([])  # blank line between metadata and table
 
                     # Table header + units row

@@ -15,6 +15,7 @@ from startScreen import StartScreen
 from bidScreen import BidScreen
 from resultScreen import ResultScreen
 from endScreen import EndScreen
+from researchLink import startConfigListener
 
 class VSPAVicApp(App):
     
@@ -52,6 +53,23 @@ class VSPAVicApp(App):
             hardware=self.hardware,
             csvLogger=self.auctionCsv,
         )
+
+        # Allow researcher machine to push session settings at launch.
+        # Tablet listens on VSPA_CONFIG_PORT (default 6000).
+        try:
+            cfg_port = int(os.environ.get("VSPA_CONFIG_PORT", "6000"))
+        except Exception:
+            cfg_port = 6000
+
+        def _apply_cfg(payload):
+            try:
+                self.state.treadmillSpeedSetting = str(payload.get("treadmillSpeedSetting", "")).strip()
+                self.state.preferredStiffnessNPerMm = str(payload.get("preferredStiffnessNPerMm", "")).strip()
+                print("Applied researcher_config:", self.state.treadmillSpeedSetting, self.state.preferredStiffnessNPerMm)
+            except Exception as e:
+                print("Config apply error:", e)
+
+        startConfigListener(_apply_cfg, port=cfg_port)
 
         sm = ScreenManager()
 

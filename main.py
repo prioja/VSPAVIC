@@ -54,17 +54,21 @@ class VSPAVicApp(App):
             csvLogger=self.auctionCsv,
         )
 
-        # Optional: randomize session duration (total bidding time) and derive totalRounds.
-        # Set before launch (seconds): export VSPA_MIN_TIME=600 VSPA_MAX_TIME=900
-        # If unset, totalRounds falls back to VSPA_TOTAL_ROUNDS above.
-        try:
-            mn = os.environ.get("VSPA_MIN_TIME", "").strip()
-            mx = os.environ.get("VSPA_MAX_TIME", "").strip()
-            if mn and mx:
-                if self.controller.configureSessionTotalTimeSeconds(float(mn), float(mx), includeInstantFirstRound=True):
-                    print("Session totalAuctionSeconds:", self.state.totalAuctionSeconds, "totalRounds:", self.state.totalRounds)
-        except Exception as e:
-            print("Session duration config ignored:", e)
+        # Randomize session duration (total bidding time) and derive totalRounds.
+        # Hard-coded bounds (minutes). Adjust these two numbers as needed.
+        minAuctionMinutes = 10
+        maxAuctionMinutes = 15
+        if self.controller.configureSessionTotalTimeSeconds(
+            float(minAuctionMinutes) * 60.0,
+            float(maxAuctionMinutes) * 60.0,
+            includeInstantFirstRound=True,
+        ):
+            print(
+                "Session totalAuctionSeconds:",
+                self.state.totalAuctionSeconds,
+                "totalRounds:",
+                self.state.totalRounds,
+            )
 
         # Allow researcher machine to push session settings at launch.
         # Tablet listens on VSPA_CONFIG_PORT (default 6000).

@@ -1,23 +1,23 @@
 """
 Optional "researcher monitor" link.
 
-On the researcher laptop, run a simple TCP listener, e.g.:
+Researcher machine (receive events):
 
-  python -m researchLink --listen --port 5999
+  python3 -m researchLink --listen --port 5999
 
-Or with netcat:
+Tablet machine (send events): set env vars before launching the app:
 
-  nc -lk 5999
-
-On the tablet, set env vars before launching the app:
-
-  export VSPA_MONITOR_HOST=141.212.x.x
+  export VSPA_MONITOR_HOST=192.168.x.x
   export VSPA_MONITOR_PORT=5999
 
 Short aliases are also accepted:
 
-  export HOST=141.212.x.x
+  export HOST=192.168.x.x
   export PORT=5999
+
+Researcher machine (send config to tablet):
+
+  python3 -m researchLink --send-config --tablet <TABLET_IP> --tablet-port 6000
 """
 
 import argparse
@@ -34,7 +34,11 @@ def sendMonitorEvent(event, payload=None, host=None, port=None):
     if not host:
         return False
     try:
-        port = int(port or os.environ.get("VSPA_MONITOR_PORT", "").strip() or os.environ.get("PORT", "5999").strip())
+        port = int(
+            port
+            or os.environ.get("VSPA_MONITOR_PORT", "").strip()
+            or os.environ.get("PORT", "5999").strip()
+        )
     except ValueError:
         port = 5999
 
@@ -55,32 +59,29 @@ def sendMonitorEvent(event, payload=None, host=None, port=None):
     return True
 
 
-def _fmt_ts(ts):
+def _fmtTs(ts):
     try:
         return datetime.fromtimestamp(float(ts)).strftime("%H:%M:%S")
     except Exception:
         return "??:??:??"
 
 
-def _pretty_line(msg):
-    ts = _fmt_ts(msg.get("ts"))
+def _prettyLine(msg):
+    ts = _fmtTs(msg.get("ts"))
     ev = msg.get("event", "event")
     payload = msg.get("payload") or {}
 
     label = payload.get("label")
-    if label:
-        head = label
-    else:
-        head = ev.replace("_", " ").upper()
+    head = label if label else ev.replace("_", " ").upper()
 
-    # Keep it minimal + readable in a terminal.
+    # Minimal + readable.
     if ev == "bid_submitted":
         bid = payload.get("bid")
         try:
-            bid_txt = f"${float(bid):.2f}"
+            bidTxt = f"${float(bid):.2f}"
         except Exception:
-            bid_txt = str(bid)
-        return f"[{ts}] BID: {bid_txt}"
+            bidTxt = str(bid)
+        return f"[{ts}] BID\n  {bidTxt}"
 
     if ev in ("help_pressed", "auction_paused", "auction_resumed"):
         return f"[{ts}] {head}"
@@ -89,39 +90,54 @@ def _pretty_line(msg):
         subj = payload.get("subjectId", "")
         cond = payload.get("trialCond", "")
         trial = payload.get("trialNum", "")
-        totalRounds = payload.get("totalRounds", "")
-        totalSeconds = payload.get("totalAuctionSeconds", "")
-        extra = ""
-        try:
-            if totalSeconds != "" and totalSeconds is not None:
-                extra += f" | {float(totalSeconds):.0f}s"
-        except Exception:
-            pass
-        if totalRounds != "" and totalRounds is not None:
-            extra += f" | rounds={totalRounds}"
-        return f"[{ts}] SESSION STARTED: {subj} | {cond} | {trial}{extra}"
+
+        totalSeconds = payload.get("totalAuctionSeconds", None)
+        totalRounds = payload.get("totalRounds", None)
+
+        lines = [
+            f"[{ts}] SESSION STARTED",
+            f"  subjectId: {subj}",
+            f"  condition: {cond}",
+            f"  trial: {trial}",
+        ]
+        if totalSeconds is not None and totalSeconds != "":
+            try:
+                lines.append(f"  totalTimeSeconds: {float(totalSeconds):.1f}")
+            except Exception:
+                lines.append(f"  totalTimeSeconds: {totalSeconds}")
+        if totalRounds is not None and totalRounds != "":
+            lines.append(f"  totalRounds: {totalRounds}")
+        return "\n".join(lines)
 
     if ev == "round_started":
         bids = payload.get("robotBidsLocked")
         if isinstance(bids, list):
             try:
-                bids_txt = ", ".join(f"{float(x):.2f}" for x in bids)
+                bidsTxt = ", ".join(f"{float(x):.2f}" for x in bids)
             except Exception:
-                bids_txt = ", ".join(str(x) for x in bids)
-            return f"[{ts}] ROUND STARTED (robots): [{bids_txt}]"
+                bidsTxt = ", ".join(str(x) for x in bids)
+            return f"[{ts}] ROUND STARTED\n  robotBids: [{bidsTxt}]"
         return f"[{ts}] ROUND STARTED"
 
-    # Fallback: show label/message if provided, else event name only.
-    msg_txt = payload.get("message")
-    if msg_txt:
-        return f"[{ts}] {head}: {msg_txt}"
+    msgTxt = payload.get("message")
+    if msgTxt:
+        return f"[{ts}] {head}\n  {msgTxt}"
     return f"[{ts}] {head}"
 
 
-def sendResearcherConfig(tabletHost, tabletPort=6000, treadmillSpeed="", preferredStiffness=""):
+def sendResearcherConfig(
+    tabletHost,
+    tabletPort=6000,
+    treadmillSpeed="",
+    preferredStiffness="",
+    minAuctionSeconds="",
+    maxAuctionSeconds="",
+):
     payload = {
         "treadmillSpeedSetting": treadmillSpeed,
         "preferredStiffnessNPerMm": preferredStiffness,
+        "minAuctionSeconds": minAuctionSeconds,
+        "maxAuctionSeconds": maxAuctionSeconds,
     }
     msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
     line = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
@@ -134,9 +150,9 @@ def sendResearcherConfig(tabletHost, tabletPort=6000, treadmillSpeed="", preferr
 
 def startConfigListener(onPayload, port=6000, host="0.0.0.0"):
     """
-    Tablet-side listener so the researcher machine can send session settings (e.g. treadmill
-    speed and preferred stiffness) at launch.
+    Tablet-side listener so the researcher machine can send session settings at launch.
     """
+
     def _run():
         srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -171,7 +187,7 @@ def startConfigListener(onPayload, port=6000, host="0.0.0.0"):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def listenLoop(port, raw=False, show_ip=False):
+def listenLoop(port, raw=False, showIp=False):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", int(port)))
@@ -182,24 +198,23 @@ def listenLoop(port, raw=False, show_ip=False):
             conn, addr = srv.accept()
             try:
                 data = conn.recv(4096)
-                if data:
-                    text = data.decode("utf-8", errors="replace")
-                    for line in text.splitlines():
-                        line = line.strip()
-                        if not line:
-                            continue
-                        if raw:
-                            prefix = f"{addr} " if show_ip else ""
-                            print(prefix + line)
-                            continue
-                        try:
-                            msg = json.loads(line)
-                        except Exception:
-                            prefix = f"{addr} " if show_ip else ""
-                            print(prefix + line)
-                            continue
-                        prefix = f"{addr} " if show_ip else ""
-                        print(prefix + _pretty_line(msg))
+                if not data:
+                    continue
+                text = data.decode("utf-8", errors="replace")
+                for line in text.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    prefix = f"{addr} " if showIp else ""
+                    if raw:
+                        print(prefix + line)
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except Exception:
+                        print(prefix + line)
+                        continue
+                    print(prefix + _prettyLine(msg))
             finally:
                 conn.close()
     except KeyboardInterrupt:
@@ -224,25 +239,46 @@ def main():
         help="Optional condition code (VS/PF/TH). If VS, will prompt for Preferred Stiffness.",
     )
     args = p.parse_args()
+
     if args.listen:
-        listenLoop(args.port, raw=args.raw, show_ip=args.show_ip)
-    elif args.send_config:
+        listenLoop(args.port, raw=args.raw, showIp=args.show_ip)
+        return
+
+    if args.send_config:
         if not args.tablet:
             raise SystemExit("--tablet is required with --send-config")
-        treadmillSpeed = input("Treadmill Speed: ").strip()
-        cond = (args.condition or input("Condition (VS/PF/TH) [optional]: ").strip()).upper()
+
+        treadmillSpeed = input("treadmillSpeed: ").strip()
+        cond = (args.condition or input("condition (VS/PF/TH) [optional]: ").strip()).upper()
         preferredStiffness = ""
         if cond.startswith("VS"):
-            preferredStiffness = input("Preferred Stiffness (N/mm): ").strip()
+            preferredStiffness = input("preferredStiffnessNPerMm: ").strip()
+
+        # Optional; leave blank to skip.
+        minAuctionMinutes = input("minAuctionMinutes (blank to skip): ").strip()
+        maxAuctionMinutes = input("maxAuctionMinutes (blank to skip): ").strip()
+        minAuctionSeconds = ""
+        maxAuctionSeconds = ""
+        try:
+            if minAuctionMinutes and maxAuctionMinutes:
+                minAuctionSeconds = str(float(minAuctionMinutes) * 60.0)
+                maxAuctionSeconds = str(float(maxAuctionMinutes) * 60.0)
+        except Exception:
+            minAuctionSeconds = ""
+            maxAuctionSeconds = ""
+
         sendResearcherConfig(
             args.tablet,
             args.tablet_port,
             treadmillSpeed=treadmillSpeed,
             preferredStiffness=preferredStiffness,
+            minAuctionSeconds=minAuctionSeconds,
+            maxAuctionSeconds=maxAuctionSeconds,
         )
         print("Sent researcher_config.")
-    else:
-        print("Nothing to do. Use --listen, or import sendMonitorEvent() from your app.")
+        return
+
+    print("Nothing to do. Use --listen or --send-config.")
 
 
 if __name__ == "__main__":

@@ -137,10 +137,10 @@ class StartScreen(Screen):
         cfg = app.controller.getSessionConfigSnapshot() if hasattr(app, "controller") else {}
         # Only include Preferred Stiffness for VSPA sessions.
         try:
-            is_vspa = bool(trialCond.strip().startswith("VS"))
+            isVspa = bool(trialCond.strip().startswith("VS"))
         except Exception:
-            is_vspa = False
-        if not is_vspa:
+            isVspa = False
+        if not isVspa:
             if isinstance(cfg, dict):
                 cfg = dict(cfg)
                 cfg.pop("preferredStiffnessNPerMm", None)
@@ -151,12 +151,14 @@ class StartScreen(Screen):
             "trialCond": getattr(st, "trialCond", None) if st else None,
             "trialNum": getattr(st, "trialNum", None) if st else None,
             "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None) if st else None,
+            "totalAuctionSeconds": getattr(st, "totalAuctionSeconds", None) if st else None,
+            "totalRounds": getattr(st, "totalRounds", None) if st else None,
             "config": cfg,
         }
         # Researcher-provided session settings (entered on researcher machine at app launch)
         if st is not None:
             session_payload["treadmillSpeedSetting"] = getattr(st, "treadmillSpeedSetting", "")
-            if is_vspa:
+            if isVspa:
                 session_payload["preferredStiffnessNPerMm"] = getattr(st, "preferredStiffnessNPerMm", "")
         sendMonitorEvent("session_started", session_payload)
         logger = getattr(app, "auctionCsv", None)

@@ -54,14 +54,26 @@ class VSPAVicApp(App):
             csvLogger=self.auctionCsv,
         )
 
+        # Optional: randomize session duration (total bidding time) and derive totalRounds.
+        # Set before launch (seconds): export VSPA_MIN_TIME=600 VSPA_MAX_TIME=900
+        # If unset, totalRounds falls back to VSPA_TOTAL_ROUNDS above.
+        try:
+            mn = os.environ.get("VSPA_MIN_TIME", "").strip()
+            mx = os.environ.get("VSPA_MAX_TIME", "").strip()
+            if mn and mx:
+                if self.controller.configureSessionTotalTimeSeconds(float(mn), float(mx), includeInstantFirstRound=True):
+                    print("Session totalAuctionSeconds:", self.state.totalAuctionSeconds, "totalRounds:", self.state.totalRounds)
+        except Exception as e:
+            print("Session duration config ignored:", e)
+
         # Allow researcher machine to push session settings at launch.
         # Tablet listens on VSPA_CONFIG_PORT (default 6000).
         try:
-            cfg_port = int(os.environ.get("VSPA_CONFIG_PORT", "6000"))
+            cfgPort = int(os.environ.get("VSPA_CONFIG_PORT", "6000"))
         except Exception:
-            cfg_port = 6000
+            cfgPort = 6000
 
-        def _apply_cfg(payload):
+        def _applyCfg(payload):
             try:
                 self.state.treadmillSpeedSetting = str(payload.get("treadmillSpeedSetting", "")).strip()
                 self.state.preferredStiffnessNPerMm = str(payload.get("preferredStiffnessNPerMm", "")).strip()
@@ -82,7 +94,7 @@ class VSPAVicApp(App):
             except Exception as e:
                 print("Config apply error:", e)
 
-        startConfigListener(_apply_cfg, port=cfg_port)
+        startConfigListener(_applyCfg, port=cfgPort)
 
         sm = ScreenManager()
 

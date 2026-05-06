@@ -38,6 +38,11 @@ class State:
         # Session end condition (configured in main.py)
         self.totalRounds = None
 
+        # Optional session timing config (randomized per session)
+        self.totalAuctionSeconds = None
+        self.minAuctionSeconds = None
+        self.maxAuctionSeconds = None
+
         # Researcher-provided session settings (sent from researcher machine at launch)
         self.treadmillSpeedSetting = ""  # free-form (e.g. "1.2 m/s" or "1.2")
         self.preferredStiffnessNPerMm = ""  # free-form numeric text (N/mm)

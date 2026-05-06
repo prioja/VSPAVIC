@@ -1,5 +1,6 @@
 import time
 from datetime import datetime
+import random
 
 from auctionCsv import AuctionCsvLogger
 from Robobidders import roboModel
@@ -40,6 +41,9 @@ class ExperimentController:
         return {
             "roundSeconds": float(getattr(self, "roundSeconds", 0.0) or 0.0),
             "totalRounds": getattr(st, "totalRounds", None),
+            "totalAuctionSeconds": getattr(st, "totalAuctionSeconds", None),
+            "minAuctionSeconds": getattr(st, "minAuctionSeconds", None),
+            "maxAuctionSeconds": getattr(st, "maxAuctionSeconds", None),
             "auctionType": "Vickrey second-price (lowest bid wins)",
             "roboModel": {
                 "name": type(self.roboModel).__name__,
@@ -48,6 +52,32 @@ class ExperimentController:
                 "b": float(getattr(self, "robo_b", 0.0) or 0.0),
             },
         }
+
+    def configureSessionTotalTimeSeconds(self, minSeconds, maxSeconds, includeInstantFirstRound=True):
+        """
+        Randomly choose a session total bidding time in [minSeconds, maxSeconds] and
+        compute totalRounds by rounding down the number of timed rounds that fit.
+
+        totalRounds = timedRounds + (1 if includeInstantFirstRound else 0)
+        """
+        try:
+            mn = float(minSeconds)
+            mx = float(maxSeconds)
+        except Exception:
+            return False
+        if mx < mn:
+            mn, mx = mx, mn
+
+        chosen = float(random.uniform(mn, mx))
+        self.state.minAuctionSeconds = mn
+        self.state.maxAuctionSeconds = mx
+        self.state.totalAuctionSeconds = chosen
+
+        rs = float(self.roundSeconds or 0.0)
+        timedRounds = int(chosen // rs) if rs > 0 else 0
+        base = 1 if includeInstantFirstRound else 0
+        self.state.totalRounds = max(base, base + timedRounds)
+        return True
 
     def startIfNeeded(self):
         if self.state.auctionStarted:

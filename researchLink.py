@@ -89,7 +89,17 @@ def _pretty_line(msg):
         subj = payload.get("subjectId", "")
         cond = payload.get("trialCond", "")
         trial = payload.get("trialNum", "")
-        return f"[{ts}] SESSION STARTED: {subj} | {cond} | {trial}"
+        totalRounds = payload.get("totalRounds", "")
+        totalSeconds = payload.get("totalAuctionSeconds", "")
+        extra = ""
+        try:
+            if totalSeconds != "" and totalSeconds is not None:
+                extra += f" | {float(totalSeconds):.0f}s"
+        except Exception:
+            pass
+        if totalRounds != "" and totalRounds is not None:
+            extra += f" | rounds={totalRounds}"
+        return f"[{ts}] SESSION STARTED: {subj} | {cond} | {trial}{extra}"
 
     if ev == "round_started":
         bids = payload.get("robotBidsLocked")
@@ -108,21 +118,21 @@ def _pretty_line(msg):
     return f"[{ts}] {head}"
 
 
-def sendResearcherConfig(tablet_host, tablet_port=6000, treadmill_speed="", preferred_stiffness=""):
+def sendResearcherConfig(tabletHost, tabletPort=6000, treadmillSpeed="", preferredStiffness=""):
     payload = {
-        "treadmillSpeedSetting": treadmill_speed,
-        "preferredStiffnessNPerMm": preferred_stiffness,
+        "treadmillSpeedSetting": treadmillSpeed,
+        "preferredStiffnessNPerMm": preferredStiffness,
     }
     msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
     line = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
-    s = socket.create_connection((tablet_host, int(tablet_port)), timeout=3.0)
+    s = socket.create_connection((tabletHost, int(tabletPort)), timeout=3.0)
     try:
         s.sendall(line)
     finally:
         s.close()
 
 
-def startConfigListener(on_payload, port=6000, host="0.0.0.0"):
+def startConfigListener(onPayload, port=6000, host="0.0.0.0"):
     """
     Tablet-side listener so the researcher machine can send session settings (e.g. treadmill
     speed and preferred stiffness) at launch.
@@ -152,7 +162,7 @@ def startConfigListener(on_payload, port=6000, host="0.0.0.0"):
                         continue
                     payload = msg.get("payload") or {}
                     try:
-                        on_payload(payload)
+                        onPayload(payload)
                     except Exception as e:
                         print("researchLink: config apply failed:", e)
             finally:
@@ -219,16 +229,16 @@ def main():
     elif args.send_config:
         if not args.tablet:
             raise SystemExit("--tablet is required with --send-config")
-        treadmill_speed = input("Treadmill Speed: ").strip()
+        treadmillSpeed = input("Treadmill Speed: ").strip()
         cond = (args.condition or input("Condition (VS/PF/TH) [optional]: ").strip()).upper()
-        preferred_stiffness = ""
+        preferredStiffness = ""
         if cond.startswith("VS"):
-            preferred_stiffness = input("Preferred Stiffness (N/mm): ").strip()
+            preferredStiffness = input("Preferred Stiffness (N/mm): ").strip()
         sendResearcherConfig(
             args.tablet,
             args.tablet_port,
-            treadmill_speed=treadmill_speed,
-            preferred_stiffness=preferred_stiffness,
+            treadmillSpeed=treadmillSpeed,
+            preferredStiffness=preferredStiffness,
         )
         print("Sent researcher_config.")
     else:

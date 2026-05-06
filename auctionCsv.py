@@ -143,12 +143,8 @@ class AuctionCsvLogger:
     ]
 
     EVENT_HEADERS = [
-        "wall_timestamp",
-        "event",
-        "round_index",
-        "pending_instant_round",
-        "auction_paused",
-        "detail_json",
+        "Timestamp:",
+        "Label",
     ]
 
     def __init__(self, dataDir=DATA_DIR):
@@ -158,9 +154,10 @@ class AuctionCsvLogger:
         """
         Log a BidScreen (or other) UI event to ``<auctionBasename>_events.csv``.
 
-        ``event`` examples: help_pressed, auction_paused, auction_resumed.
-        ``detail`` is optional JSON-serializable context (merged into detail_json column).
+        Only logs the researcher-relevant events (HELP / PAUSE).
         """
+        if event not in ("help_pressed", "auction_paused", "auction_resumed"):
+            return
         if not state.subjectId or not state.subjectId.strip():
             print("AuctionCsvLogger: skip UI event (no subject id yet).", event)
             return
@@ -168,13 +165,19 @@ class AuctionCsvLogger:
         detail = dict(detail) if detail else {}
         path = buildEventsCsvPath(state, self.dataDir)
         wall_ts = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+        label = detail.get("label")
+        if not label:
+            if event == "help_pressed":
+                label = "ALERT"
+            elif event == "auction_paused":
+                label = "PAUSED EXPERIMENT"
+            elif event == "auction_resumed":
+                label = "RESUMED EXPERIMENT"
+            else:
+                label = event
         row = [
             _excel_text(wall_ts),
-            event,
-            getattr(state, "roundIndex", ""),
-            int(bool(getattr(state, "pendingInstantRound", False))),
-            int(bool(getattr(state, "auctionPaused", False))),
-            json.dumps(detail, separators=(",", ":"), default=str),
+            str(label),
         ]
 
         try:

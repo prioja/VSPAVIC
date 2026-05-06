@@ -85,6 +85,32 @@ def _excel_text(value):
     return f'="{s}"'
 
 
+def _split_session_timestamp(ts):
+    """
+    Input is usually: YYYY-MM-DD HH:MM:SS AM/PM
+    Returns (date_str, time_str). Falls back to simple splitting.
+    """
+    if ts is None:
+        return "", ""
+    s = str(ts).strip()
+    if not s:
+        return "", ""
+    try:
+        dt = datetime.strptime(s, "%Y-%m-%d %I:%M:%S %p")
+        return dt.strftime("%Y-%m-%d"), dt.strftime("%I:%M:%S %p")
+    except Exception:
+        parts = s.split()
+        if len(parts) >= 2:
+            return parts[0], " ".join(parts[1:])
+        return s, ""
+
+
+def _time_only(ts):
+    """Return only the time portion from a session/round timestamp string."""
+    _d, _t = _split_session_timestamp(ts)
+    return _t or ""
+
+
 class AuctionCsvLogger:
     """One CSV per session; one row per finalized round.
     UI events (HELP / PAUSE) append to a sibling ``*_events.csv`` file.
@@ -92,16 +118,16 @@ class AuctionCsvLogger:
 
     # Table columns (metadata like subject/condition/trial are written as a title block above)
     HEADERS = [
-        "round_number",
-        "round_start_timestamp",
-        "round_end_timestamp",
-        "subject_bid",
-        "human_won",
-        "lowest_bid",
-        "vickrey_price_second_lowest",
-        "total_subject_winnings",
-        "treadmill_speed",
-        "treadmill_distance",
+        "Round #",
+        "Start Time",
+        "End Time",
+        "Subject Bid",
+        "Human Won",
+        "Lowest Bid",
+        "Vickrey Price",
+        "Total Winnings",
+        "Treadmill Speed",
+        "Distance",
     ]
 
     # Units row, written directly under HEADERS (helps during analysis in Excel/R/etc.)
@@ -160,10 +186,12 @@ class AuctionCsvLogger:
             with open(path, "a", newline="") as f:
                 w = csv.writer(f)
                 if write_header:
-                    w.writerow(["subjectId", state.subjectId.strip()])
-                    w.writerow(["trialCondition", state.trialCond])
-                    w.writerow(["trialNumber", state.trialNum])
-                    w.writerow(["sessionStartTimestamp", _excel_text(getattr(state, "sessionStartTimestamp", ""))])
+                    w.writerow(["subjID:", state.subjectId.strip()])
+                    w.writerow(["Condition:", state.trialCond])
+                    w.writerow(["Trial #:", state.trialNum])
+                    _d, _t = _split_session_timestamp(getattr(state, "sessionStartTimestamp", ""))
+                    w.writerow(["Date:", _excel_text(_d)])
+                    w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow(["logType", "ui_events"])
                     w.writerow([])
                     w.writerow(self.EVENT_HEADERS)
@@ -192,8 +220,8 @@ class AuctionCsvLogger:
 
         row = [
             result.get("roundIndex", ""),
-            _excel_text(result.get("roundStartTimestamp")),
-            _excel_text(result.get("roundEndTimestamp", result.get("timestamp", ""))),
+            _excel_text(_time_only(result.get("roundStartTimestamp"))),
+            _excel_text(_time_only(result.get("roundEndTimestamp", result.get("timestamp", "")))),
             result.get("humanBid", ""),
             result.get("humanWon", ""),
             result.get("lowestBid", ""),
@@ -211,11 +239,12 @@ class AuctionCsvLogger:
                 w = csv.writer(f)
                 if writeHeader:
                     # Title / metadata block
-                    w.writerow(["subjectId", state.subjectId.strip()])
-                    w.writerow(["trialCondition", state.trialCond])
-                    w.writerow(["trialNumber", state.trialNum])
-                    w.writerow(["sessionStartTimestamp", _excel_text(result.get("sessionStartTimestamp"))])
-                    w.writerow(["auctionType", "Vickrey second-price (lowest bid wins)"])
+                    w.writerow(["subjID:", state.subjectId.strip()])
+                    w.writerow(["Condition:", state.trialCond])
+                    w.writerow(["Trial #:", state.trialNum])
+                    _d, _t = _split_session_timestamp(result.get("sessionStartTimestamp"))
+                    w.writerow(["Date:", _excel_text(_d)])
+                    w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow([])  # blank line between metadata and table
 
                     # Table header + units row

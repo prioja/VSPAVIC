@@ -66,6 +66,19 @@ class VSPAVicApp(App):
                 self.state.treadmillSpeedSetting = str(payload.get("treadmillSpeedSetting", "")).strip()
                 self.state.preferredStiffnessNPerMm = str(payload.get("preferredStiffnessNPerMm", "")).strip()
                 print("Applied researcher_config:", self.state.treadmillSpeedSetting, self.state.preferredStiffnessNPerMm)
+
+                # If treadmill speed looks numeric, apply it to the treadmill controller.
+                # This sets the speed used when the belts are started (e.g., on a win).
+                raw = self.state.treadmillSpeedSetting
+                if raw:
+                    cleaned = "".join(ch for ch in raw if (ch.isdigit() or ch in ".-"))
+                    try:
+                        sp = float(cleaned)
+                        if sp >= 0.0:
+                            self.hardware.walkSpeedMs = sp
+                            print("Treadmill walkSpeedMs set to:", sp)
+                    except Exception:
+                        pass
             except Exception as e:
                 print("Config apply error:", e)
 

@@ -37,13 +37,9 @@ class VSPAVicApp(App):
             pass
 
         self.state = State()
-        # Total number of rounds in this session. After this many finalized rounds,
-        # the app will navigate to the End screen instead of returning to bidding.
-        # Set before launch: export VSPA_TOTAL_ROUNDS=10
-        try:
-            self.state.totalRounds = int(os.environ.get("VSPA_TOTAL_ROUNDS", "10"))
-        except Exception:
-            self.state.totalRounds = 10
+        # totalRounds is computed from the randomized session duration bounds below.
+        # (No default fixed number of rounds.)
+        self.state.totalRounds = None
         # Enable treadmill control by default for the experiment.
         # (Previously required setting VSPA_TREADMILL=1.)
         self.hardware = TreadmillHardware(enabled=True)
@@ -56,8 +52,8 @@ class VSPAVicApp(App):
 
         # Randomize session duration (total bidding time) and derive totalRounds.
         # Hard-coded bounds (minutes). Adjust these two numbers as needed.
-        minAuctionMinutes = 10
-        maxAuctionMinutes = 15
+        minAuctionMinutes = 35
+        maxAuctionMinutes = 45
         if self.controller.configureSessionTotalTimeSeconds(
             float(minAuctionMinutes) * 60.0,
             float(maxAuctionMinutes) * 60.0,

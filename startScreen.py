@@ -152,6 +152,7 @@ class StartScreen(Screen):
             "trialNum": getattr(st, "trialNum", None) if st else None,
             "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None) if st else None,
             "totalAuctionSeconds": getattr(st, "totalAuctionSeconds", None) if st else None,
+            "totalAuctionMinutes": (float(getattr(st, "totalAuctionSeconds", 0.0) or 0.0) / 60.0) if getattr(st, "totalAuctionSeconds", None) is not None else None,
             "totalRounds": getattr(st, "totalRounds", None) if st else None,
             "config": cfg,
         }

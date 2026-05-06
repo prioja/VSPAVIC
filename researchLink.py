@@ -102,9 +102,9 @@ def _prettyLine(msg):
         ]
         if totalSeconds is not None and totalSeconds != "":
             try:
-                lines.append(f"  totalTimeSeconds: {float(totalSeconds):.1f}")
+                lines.append(f"  totalTimeMinutes: {float(totalSeconds) / 60.0:.2f}")
             except Exception:
-                lines.append(f"  totalTimeSeconds: {totalSeconds}")
+                lines.append(f"  totalTimeMinutes: {totalSeconds}")
         if totalRounds is not None and totalRounds != "":
             lines.append(f"  totalRounds: {totalRounds}")
         return "\n".join(lines)
@@ -130,14 +130,10 @@ def sendResearcherConfig(
     tabletPort=6000,
     treadmillSpeed="",
     preferredStiffness="",
-    minAuctionSeconds="",
-    maxAuctionSeconds="",
 ):
     payload = {
         "treadmillSpeedSetting": treadmillSpeed,
         "preferredStiffnessNPerMm": preferredStiffness,
-        "minAuctionSeconds": minAuctionSeconds,
-        "maxAuctionSeconds": maxAuctionSeconds,
     }
     msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
     line = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
@@ -254,26 +250,11 @@ def main():
         if cond.startswith("VS"):
             preferredStiffness = input("preferredStiffnessNPerMm: ").strip()
 
-        # Optional; leave blank to skip.
-        minAuctionMinutes = input("minAuctionMinutes (blank to skip): ").strip()
-        maxAuctionMinutes = input("maxAuctionMinutes (blank to skip): ").strip()
-        minAuctionSeconds = ""
-        maxAuctionSeconds = ""
-        try:
-            if minAuctionMinutes and maxAuctionMinutes:
-                minAuctionSeconds = str(float(minAuctionMinutes) * 60.0)
-                maxAuctionSeconds = str(float(maxAuctionMinutes) * 60.0)
-        except Exception:
-            minAuctionSeconds = ""
-            maxAuctionSeconds = ""
-
         sendResearcherConfig(
             args.tablet,
             args.tablet_port,
             treadmillSpeed=treadmillSpeed,
             preferredStiffness=preferredStiffness,
-            minAuctionSeconds=minAuctionSeconds,
-            maxAuctionSeconds=maxAuctionSeconds,
         )
         print("Sent researcher_config.")
         return

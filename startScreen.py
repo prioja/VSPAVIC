@@ -135,6 +135,15 @@ class StartScreen(Screen):
         # Notify researcher + log to events CSV once the session metadata exists.
         st = getattr(app, "state", None)
         cfg = app.controller.getSessionConfigSnapshot() if hasattr(app, "controller") else {}
+        # Only include Preferred Stiffness for VSPA sessions.
+        try:
+            is_vspa = bool(trialCond.strip().startswith("VS"))
+        except Exception:
+            is_vspa = False
+        if not is_vspa:
+            if isinstance(cfg, dict):
+                cfg = dict(cfg)
+                cfg.pop("preferredStiffnessNPerMm", None)
         session_payload = {
             "label": "SESSION STARTED",
             "message": "Participant pressed START",
@@ -144,6 +153,11 @@ class StartScreen(Screen):
             "sessionStartTimestamp": getattr(st, "sessionStartTimestamp", None) if st else None,
             "config": cfg,
         }
+        # Researcher-provided session settings (entered on researcher machine at app launch)
+        if st is not None:
+            session_payload["treadmillSpeedSetting"] = getattr(st, "treadmillSpeedSetting", "")
+            if is_vspa:
+                session_payload["preferredStiffnessNPerMm"] = getattr(st, "preferredStiffnessNPerMm", "")
         sendMonitorEvent("session_started", session_payload)
         logger = getattr(app, "auctionCsv", None)
         if logger is not None and st is not None:

@@ -100,7 +100,6 @@ class ResultScreen(Screen):
             self.logoImage.source = str(figsDir / "won_logo.png")
             self.actionGif.opacity = 1
             self.actionGif.start(str(figsDir / "walking.gif"))
-            # won_logo already communicates win/walk — hide redundant labels
             self.winTitle.opacity = 0
             self.winBody.opacity = 0
             self.loseTitle.opacity = 0
@@ -109,8 +108,14 @@ class ResultScreen(Screen):
             self.stack.size_hint_y = 0.001
         else:
             self.logoImage.source = str(figsDir / "lost_logo.png")
-            self.actionGif.stop()
-            self.actionGif.opacity = 0
+            sittingGif = figsDir / "sitting.gif"
+            if sittingGif.exists():
+                self.actionGif.opacity = 1
+                self.actionGif.start(str(sittingGif))
+            else:
+                # If the asset isn't present yet, don't break the flow.
+                self.actionGif.stop()
+                self.actionGif.opacity = 0
             self.winTitle.opacity = 0
             self.winBody.opacity = 0
             if humanParticipated:

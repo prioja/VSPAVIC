@@ -13,6 +13,11 @@ On the tablet, set env vars before launching the app:
 
   export VSPA_MONITOR_HOST=141.212.x.x
   export VSPA_MONITOR_PORT=5999
+
+Short aliases are also accepted:
+
+  export HOST=141.212.x.x
+  export PORT=5999
 """
 
 import argparse
@@ -25,11 +30,11 @@ from datetime import datetime
 
 
 def sendMonitorEvent(event, payload=None, host=None, port=None):
-    host = host or os.environ.get("VSPA_MONITOR_HOST", "").strip()
+    host = host or os.environ.get("VSPA_MONITOR_HOST", "").strip() or os.environ.get("HOST", "").strip()
     if not host:
         return False
     try:
-        port = int(port or os.environ.get("VSPA_MONITOR_PORT", "5999"))
+        port = int(port or os.environ.get("VSPA_MONITOR_PORT", "").strip() or os.environ.get("PORT", "5999").strip())
     except ValueError:
         port = 5999
 

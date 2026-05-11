@@ -1,0 +1,11 @@
+subjID:,001
+Condition:,PF ~ Proflex
+Trial #:,1
+Date:,"=""05-11-2026"""
+Experiment Time:,"=""03:53:21 PM"""
+Treadmill Speed:,
+Preferred Stiffness (N/mm):,
+
+Round #,Start Time,End Time,Subject Bid,Human Won,Lowest Bid,Vickrey Price,Total Winnings,Distance
+,,,$,,$,$,$,m
+0,"=""03:53:24 PM""","=""03:53:24 PM""",0.14,True,0.14,0.4,0.4,

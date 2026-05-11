@@ -1,14 +1,11 @@
-certifi==2026.2.25
-charset-normalizer==3.4.6
-docutils==0.22.4
-filetype==1.2.0
-idna==3.11
+# betApp (VSPAVIC) — Python 3.10+ recommended
+# Install: python -m venv kivy_venv && ./kivy_venv/bin/pip install -r requirements.txt
+
+# UI
 Kivy==2.3.1
-Kivy-examples==2.3.1
-Kivy-Garden==0.1.5
+
+# Robobidders / BertecMan
 numpy==2.4.4
-packaging==26.0
+
+# Pillow GIF widget (gifWidget)
 pillow==10.4.0
-Pygments==2.20.0
-requests==2.33.1
-urllib3==2.6.3

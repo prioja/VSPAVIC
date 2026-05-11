@@ -16,7 +16,7 @@ from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
-from researchLink import sendMonitorEvent
+from researchLink import SESSION_START_RESEARCHER_REMINDERS, sendMonitorEvent
 
 
 
@@ -154,6 +154,7 @@ class StartScreen(Screen):
             "totalAuctionSeconds": getattr(st, "totalAuctionSeconds", None) if st else None,
             "totalAuctionMinutes": (float(getattr(st, "totalAuctionSeconds", 0.0) or 0.0) / 60.0) if getattr(st, "totalAuctionSeconds", None) is not None else None,
             "totalRounds": getattr(st, "totalRounds", None) if st else None,
+            "researcherReminders": list(SESSION_START_RESEARCHER_REMINDERS),
             "config": cfg,
         }
         # Researcher-provided session settings (entered on researcher machine at app launch)

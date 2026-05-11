@@ -11,7 +11,7 @@ class State:
 
         # Auction timing/state
         self.auctionStarted = False
-        self.auctionStartPerf = None  # set on first finalized bid (perf_counter seconds)
+        self.auctionStartPerf = None  # set on first SUBMIT (perf_counter seconds)
 
         # Round bookkeeping
         self.roundIndex = -1

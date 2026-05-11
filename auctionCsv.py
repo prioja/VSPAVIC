@@ -9,10 +9,6 @@ Auction format (Vickrey second-price, lowest-bid wins):
 Files (matches your terminal naming):
   auctionFilename = "VSPAVIC" + subject + "_A_" + condition + trial + ".csv"
   Example: VSPAVIC001_A_TH1.csv where TH + 1 is short condition code + trial number.
-
-Heart-rate path:
-  hrFilename = "VSPAVIC" + subject + "_HR_" + condition + trial + ".csv"
-  (computed below; HR logging not implemented yet — commented example in appendRound.)
 """
 
 import csv
@@ -39,7 +35,7 @@ def conditionCodeFromUI(trialCondText):
 
 def buildSessionPaths(state, dataDir=DATA_DIR):
     """
-    Returns (auctionPath, hrPath, auctionFilename, hrFilename).
+    Returns (auctionPath, auctionFilename).
     """
     subj = "".join((state.subjectId or "").split())
     cc = conditionCodeFromUI(state.trialCond)
@@ -49,18 +45,16 @@ def buildSessionPaths(state, dataDir=DATA_DIR):
 
     condTrial = f"{cc}{trial}"
     auctionFilename = f"VSPAVIC{subj}_{condTrial}_A.csv"
-    hrFilename = f"VSPAVIC{subj}_{condTrial}_HR.csv"
 
     os.makedirs(dataDir, exist_ok=True)
     auctionPath = os.path.join(dataDir, auctionFilename)
-    hrPath = os.path.join(dataDir, hrFilename)
 
-    return auctionPath, hrPath, auctionFilename, hrFilename
+    return auctionPath, auctionFilename
 
 
 def buildEventsCsvPath(state, dataDir=DATA_DIR):
     """Companion log for UI events (HELP / PAUSE), same folder as the auction CSV."""
-    auctionPath, _hrPath, _af, _hf = buildSessionPaths(state, dataDir)
+    auctionPath, _af = buildSessionPaths(state, dataDir)
     root, ext = os.path.splitext(auctionPath)
     return f"{root}_events{ext}"
 
@@ -208,14 +202,7 @@ class AuctionCsvLogger:
             print("AuctionCsvLogger: skip write (no subject id yet).")
             return
 
-        auctionPath, hrPath, auctionFilename, hrFilename = buildSessionPaths(
-            state, self.dataDir
-        )
-
-        # Heart-rate file (future): same naming as terminal script — uncomment when wiring HR.
-        # hrFilename = f"VSPAVIC{subj}_HR_{condTrial}.csv"
-        # hrPath = os.path.join(self.dataDir, hrFilename)
-        _ = hrFilename, hrPath, auctionFilename
+        auctionPath, _ = buildSessionPaths(state, self.dataDir)
 
         treadmillSpeedMs = result.get("treadmillSpeedMs")
         treadmillDistanceKm = result.get("treadmillDistanceKm")

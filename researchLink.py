@@ -28,6 +28,13 @@ import threading
 import time
 from datetime import datetime
 
+# Shown after total time / total rounds on `session_started` (monitor + JSON payload).
+SESSION_START_RESEARCHER_REMINDERS = (
+    "Please ensure COSMED is fitted.",
+    "Please ensure the heart-rate monitor is fitted.",
+    "Submit the total auction length (see totalTimeMinutes above) to the heart program.",
+)
+
 
 def sendMonitorEvent(event, payload=None, host=None, port=None):
     host = host or os.environ.get("VSPA_MONITOR_HOST", "").strip() or os.environ.get("HOST", "").strip()
@@ -95,10 +102,10 @@ def _prettyLine(msg):
         totalRounds = payload.get("totalRounds", None)
 
         lines = [
-            f"[{ts}] SESSION STARTED",
-            f"  subjectId: {subj}",
-            f"  condition: {cond}",
-            f"  trial: {trial}",
+            f"[{ts}] ---------- SESSION STARTED ----------",
+            f"  Subject ID: {subj}",
+            f"  Condition: {cond}",
+            f"  Trial #: {trial}",
         ]
         if totalSeconds is not None and totalSeconds != "":
             try:
@@ -107,6 +114,13 @@ def _prettyLine(msg):
                 lines.append(f"  totalTimeMinutes: {totalSeconds}")
         if totalRounds is not None and totalRounds != "":
             lines.append(f"  totalRounds: {totalRounds}")
+        reminders = payload.get("researcherReminders")
+        if not isinstance(reminders, (list, tuple)) or not reminders:
+            reminders = SESSION_START_RESEARCHER_REMINDERS
+        lines.append("")
+        lines.append("  --- Researcher reminders ---")
+        for r in reminders:
+            lines.append(f"  {r}")
         return "\n".join(lines)
 
     if ev == "round_started":

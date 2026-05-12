@@ -51,18 +51,6 @@ def buildSessionPaths(state, dataDir=DATA_DIR):
     return auctionPath, auctionFilename
 
 
-def build_hr_polar_log_csv_path(state, data_dir=DATA_DIR):
-    """Standalone Polar HR log path (same stem as auction CSV, distinct filename)."""
-    auction_path, _af = buildSessionPaths(state, data_dir)
-    root, _ext = os.path.splitext(auction_path)
-    return f"{root}_HR_polar.csv"
-
-
-def build_ecg_polar_log_csv_path(state, data_dir=DATA_DIR):
-    """ECG log path next to the HR Polar CSV."""
-    return build_hr_polar_log_csv_path(state, data_dir).replace("_HR_polar.csv", "_ECG_polar.csv")
-
-
 def buildEventsCsvPath(state, dataDir=DATA_DIR):
     """Companion log for UI events (HELP / PAUSE), same folder as the auction CSV."""
     auctionPath, _af = buildSessionPaths(state, dataDir)
@@ -221,7 +209,6 @@ class AuctionCsvLogger:
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
-                    w.writerow(["Heart Rate (Baseline):", _cell(getattr(state, "heartRateBaselineSetting", ""))])
                     w.writerow(["Preferred Stiffness (N/mm):", _preferred_stiffness_metadata(state)])
                     w.writerow(["logType", "ui_events"])
                     w.writerow([])
@@ -275,7 +262,6 @@ class AuctionCsvLogger:
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
-                    w.writerow(["Heart Rate (Baseline):", _cell(getattr(state, "heartRateBaselineSetting", ""))])
                     w.writerow(["Preferred Stiffness (N/mm):", _preferred_stiffness_metadata(state)])
                     w.writerow([])  # blank line between metadata and table
 

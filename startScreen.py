@@ -128,6 +128,7 @@ class StartScreen(Screen):
             app.state.trialCond = trialCond
             app.state.trialNum = trialNum
             app.state.sessionStartTimestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+
         if hasattr(app, "controller"):
             app.controller.markFirstRoundInstant()
 
@@ -162,7 +163,6 @@ class StartScreen(Screen):
         # Researcher-provided session settings (entered on researcher machine at app launch)
         if st is not None:
             session_payload["treadmillSpeedSetting"] = getattr(st, "treadmillSpeedSetting", "")
-            session_payload["heartRateBaselineSetting"] = getattr(st, "heartRateBaselineSetting", "")
             session_payload["preferredStiffnessNPerMm"] = stiffness_for_monitor
         sendMonitorEvent("session_started", session_payload)
         logger = getattr(app, "auctionCsv", None)
@@ -173,10 +173,10 @@ class StartScreen(Screen):
         if hardware is not None and getattr(hardware, "enabled", False):
             hardware.prepareSession()
 
-        print("=== STARTING EXPERIMENT ===")
-        print("Subject ID:", subjectId)
-        print("Trial Condition:", trialCond)
-        print("Trial Number:", trialNum)
+        print("=== STARTING EXPERIMENT ===", flush=True)
+        print("Subject ID:", subjectId, flush=True)
+        print("Trial Condition:", trialCond, flush=True)
+        print("Trial Number:", trialNum, flush=True)
 
         # If/when you add the bid screen, this will take you there.
         root = App.get_running_app().root

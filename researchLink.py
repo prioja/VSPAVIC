@@ -19,7 +19,7 @@ Researcher machine (send config to tablet):
 
   python3 -m researchLink --send-config --tablet <TABLET_IP> --tablet-port 6000
 
-  Prompts: treadmill speed, heart-rate baseline, condition; preferred stiffness only if VS*.
+  Prompts: treadmill speed, condition; preferred stiffness only if VS*.
 """
 
 import argparse
@@ -33,8 +33,6 @@ from datetime import datetime
 # Shown after total time / total rounds on `session_started` (monitor + JSON payload).
 SESSION_START_RESEARCHER_REMINDERS = (
     "Please ensure COSMED mask is fitted.",
-    "Please ensure the heartrate monitor is fitted.",
-    "Start heartrate program with total time.",
 )
 
 
@@ -121,10 +119,19 @@ def _prettyLine(msg):
                 lines.append(f"  totalTimeMinutes: {totalSeconds}")
         if totalRounds is not None and totalRounds != "":
             lines.append(f"  totalRounds: {totalRounds}")
+        cfg = payload.get("config")
+        if isinstance(cfg, dict):
+            rm = cfg.get("roboModel")
+            if isinstance(rm, dict) and rm:
+                summ = (rm.get("summary") or "").strip()
+                if summ:
+                    lines.append(f"  Robo model (session): {summ}")
+                else:
+                    lines.append(
+                        f"  Robo model (session): {rm.get('name', '')}  k={rm.get('k')}  b={rm.get('b')}  n={rm.get('count')}"
+                    )
         if "treadmillSpeedSetting" in payload:
             lines.append(f"  treadmillSpeedSetting: {payload.get('treadmillSpeedSetting', '')}")
-        if "heartRateBaselineSetting" in payload:
-            lines.append(f"  heartRateBaselineSetting: {payload.get('heartRateBaselineSetting', '')}")
         if "preferredStiffnessNPerMm" in payload:
             lines.append(f"  preferredStiffnessNPerMm: {payload.get('preferredStiffnessNPerMm', '')}")
         reminders = payload.get("researcherReminders")
@@ -146,33 +153,23 @@ def _prettyLine(msg):
             lab = (payload.get("label") or "").strip()
             if lab:
                 title = lab
+        lines = [f"[{ts}] {title}"]
         bids = payload.get("robotBidsLocked")
         if isinstance(bids, list):
             try:
                 bidsTxt = ", ".join(f"{float(x):.2f}" for x in bids)
             except Exception:
                 bidsTxt = ", ".join(str(x) for x in bids)
-            return f"[{ts}] {title}\n Robotbids: [{bidsTxt}]"
-        return f"[{ts}] {title}"
-
-    if ev == "hr_sensor_connected":
-        subj = payload.get("subjectId", "")
-        dur = payload.get("recordingDurationSeconds", "")
-        anc = payload.get("anchorUnix", "")
-        fn = payload.get("hrCsvPath", "")
-        lines = [
-            f"[{ts}] ---------- HR SENSOR CONNECTED ----------",
-            f"  Subject ID: {subj}",
-            f"  recordingDurationSeconds: {dur}",
-            f"  anchorUnix: {anc}",
-            f"  hrCsvPath: {fn}",
-            f"  ecgCsvPath: {payload.get('ecgCsvPath', '')}",
-            f"  hrSamplesReceived: {payload.get('hrSamplesReceived', '')}",
-            f"  ecgEnabled: {payload.get('ecgEnabled', '')}",
-        ]
-        msg = (payload.get("message") or "").strip()
-        if msg:
-            lines.append(f"  note: {msg}")
+            lines.append(f"  Robot bids: [{bidsTxt}]")
+        rm = payload.get("roboModel")
+        if isinstance(rm, dict) and rm:
+            summ = (rm.get("summary") or "").strip()
+            if summ:
+                lines.append(f"  Robo model: {summ}")
+            else:
+                lines.append(
+                    f"  Robo model: {rm.get('name', '')}  k={rm.get('k')}  b={rm.get('b')}  n={rm.get('count')}"
+                )
         return "\n".join(lines)
 
     msgTxt = payload.get("message")
@@ -185,12 +182,10 @@ def sendResearcherConfig(
     tabletHost,
     tabletPort=6000,
     treadmillSpeed="",
-    heartRateBaseline="",
     preferredStiffness="",
 ):
     payload = {
         "treadmillSpeedSetting": treadmillSpeed,
-        "heartRateBaselineSetting": heartRateBaseline,
         "preferredStiffnessNPerMm": preferredStiffness,
     }
     msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
@@ -287,7 +282,7 @@ def main():
     p.add_argument(
         "--send-config",
         action="store_true",
-        help="Prompt and send treadmill / HR baseline / stiffness (VS) to tablet.",
+        help="Prompt and send treadmill / stiffness (VS) to tablet.",
     )
     p.add_argument("--tablet", type=str, default="", help="Tablet IP/hostname for --send-config.")
     p.add_argument("--tablet-port", type=int, default=6000, help="Tablet port for --send-config (default 6000).")
@@ -308,7 +303,6 @@ def main():
             raise SystemExit("--tablet is required with --send-config")
 
         treadmillSpeed = input("treadmillSpeed: ").strip()
-        heartRateBaseline = input("heartRateBaseline (e.g. BPM): ").strip()
         cond = (args.condition or input("condition (VS/PF/TH) [optional]: ").strip()).upper()
         preferredStiffness = ""
         if cond.startswith("VS"):
@@ -318,7 +312,6 @@ def main():
             args.tablet,
             args.tablet_port,
             treadmillSpeed=treadmillSpeed,
-            heartRateBaseline=heartRateBaseline,
             preferredStiffness=preferredStiffness,
         )
         print("Sent researcher_config.")

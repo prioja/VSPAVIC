@@ -76,12 +76,10 @@ class VSPAVicApp(App):
         def _applyCfg(payload):
             try:
                 self.state.treadmillSpeedSetting = str(payload.get("treadmillSpeedSetting", "")).strip()
-                self.state.heartRateBaselineSetting = str(payload.get("heartRateBaselineSetting", "")).strip()
                 self.state.preferredStiffnessNPerMm = str(payload.get("preferredStiffnessNPerMm", "")).strip()
                 print(
                     "Applied researcher_config:",
                     self.state.treadmillSpeedSetting,
-                    self.state.heartRateBaselineSetting,
                     self.state.preferredStiffnessNPerMm,
                 )
 

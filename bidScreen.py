@@ -14,18 +14,25 @@ from kivy.metrics import dp
 from researchLink import sendMonitorEvent
 
 
-def _monitor_round_started_payload(st):
+def _monitor_round_started_payload(st, controller=None):
     """1-based round # for researcher monitor (len(completed) + 1 for the round now starting)."""
     n = 1
     if st is not None:
         n = len(getattr(st, "results", []) or []) + 1
-    return {
+    out = {
         "label": f"ROUND {n} STARTED",
         "roundNumber": n,
         "roundIndex": getattr(st, "roundIndex", None) if st is not None else None,
         "roundStartTimestamp": getattr(st, "roundStartTimestamp", None) if st is not None else None,
         "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []) if st is not None else [],
     }
+    if controller is not None and hasattr(controller, "getSessionConfigSnapshot"):
+        try:
+            snap = controller.getSessionConfigSnapshot() or {}
+            out["roboModel"] = snap.get("roboModel") or {}
+        except Exception:
+            out["roboModel"] = {}
+    return out
 
 
 # ---------------- ROUND BUTTON ----------------
@@ -85,7 +92,7 @@ class BidScreen(Screen):
             font_size=90,
             bold=True,
             size_hint=(None, None),
-            pos_hint={"x": 0.15, "y": 0.02},
+            pos_hint={"x": 0.1, "y": 0.02},
         )
         self.timerLabel.opacity = 0
         self.display = Label(text=self.formatMoney(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_y": 0.2})
@@ -215,7 +222,11 @@ class BidScreen(Screen):
             # robot bids are now locked; emit them once.
             new_round_start = None if st is None else getattr(st, "roundStartPerf", None)
             if prev_round_start is None and new_round_start is not None:
-                self._emit_event(app, "round_started", _monitor_round_started_payload(st))
+                self._emit_event(
+                    app,
+                    "round_started",
+                    _monitor_round_started_payload(st, getattr(app, "controller", None)),
+                )
             print("Submitted (latest) bid:", bid)
         else:
             print("Submitted bid:", bid)
@@ -467,7 +478,11 @@ class BidScreen(Screen):
         st = getattr(app, "state", None)
         started_now = st is not None and getattr(st, "roundStartPerf", None) is not None and self._lastRoundStartPerf != getattr(st, "roundStartPerf", None)
         if started_now and not getattr(st, "pendingInstantRound", False):
-            self._emit_event(app, "round_started", _monitor_round_started_payload(st))
+            self._emit_event(
+                app,
+                "round_started",
+                _monitor_round_started_payload(st, getattr(app, "controller", None)),
+            )
         self._lastRoundStartPerf = None if st is None else getattr(st, "roundStartPerf", None)
 
         remaining = app.controller.getSecondsRemaining() if hasattr(app, "controller") else None

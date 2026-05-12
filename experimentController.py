@@ -50,6 +50,7 @@ class ExperimentController:
                 "count": int(getattr(self, "robo_n", 0) or 0),
                 "k": float(getattr(self, "robo_k", 0.0) or 0.0),
                 "b": float(getattr(self, "robo_b", 0.0) or 0.0),
+                "summary": self.roboModel.name(),
             },
         }
 

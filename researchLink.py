@@ -77,20 +77,25 @@ def _fmtTs(ts):
 
 def _prettyLine(msg):
     ts = _fmtTs(msg.get("ts"))
-    ev = msg.get("event", "event")
+    # Do not default missing "event" to the literal "event" — that breaks special-case matching.
+    ev = (msg.get("event") or msg.get("Event") or "").strip()
     payload = msg.get("payload") or {}
 
     label = payload.get("label")
     head = label if label else ev.replace("_", " ").upper()
 
     # Minimal + readable.
-    if ev == "bid_submitted":
+    is_bid = ev == "bid_submitted" or (
+        "bid" in payload
+        and str(payload.get("label", "")).strip().upper() == "BID SUBMITTED"
+    )
+    if is_bid:
         bid = payload.get("bid")
         try:
             bidTxt = f"${float(bid):.2f}"
         except Exception:
             bidTxt = str(bid)
-        return f"[{ts}] BID\n  {bidTxt}"
+        return f"[{ts}] Subject Bid: {bidTxt}"
 
     if ev in ("help_pressed", "auction_paused", "auction_resumed"):
         return f"[{ts}] {head}"
@@ -147,7 +152,7 @@ def _prettyLine(msg):
                 bidsTxt = ", ".join(f"{float(x):.2f}" for x in bids)
             except Exception:
                 bidsTxt = ", ".join(str(x) for x in bids)
-            return f"[{ts}] {title}\n  robotBids: [{bidsTxt}]"
+            return f"[{ts}] {title}\n Robotbids: [{bidsTxt}]"
         return f"[{ts}] {title}"
 
     msgTxt = payload.get("message")
@@ -222,6 +227,7 @@ def listenLoop(port, raw=False, showIp=False):
     srv.bind(("0.0.0.0", int(port)))
     srv.listen(5)
     print(f"researchLink: listening on 0.0.0.0:{port} (Ctrl+C to stop)")
+    print(f"researchLink: using script {__file__!r} — restart this process after edits.")
     try:
         while True:
             conn, addr = srv.accept()

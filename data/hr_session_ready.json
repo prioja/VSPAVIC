@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "subjectId": "004",
+  "trialCond": "TH ~ Take Home",
+  "trialNum": "1",
+  "totalAuctionSeconds": 2158.9246051813698,
+  "bufferSeconds": 300.0,
+  "recordingDurationSeconds": 2458.9246051813698,
+  "anchorUnix": 1778616871.7083771,
+  "sessionStartTimestamp": "2026-05-12 04:14:31 PM"
+}

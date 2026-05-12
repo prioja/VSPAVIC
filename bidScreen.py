@@ -82,7 +82,7 @@ class BidScreen(Screen):
         header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 55, bold=True)
         self.timerLabel = Label(
             text="Round: --:--",
-            font_size=34,
+            font_size=70,
             bold=True,
             size_hint=(None, None),
             pos_hint={"x": 0.02, "y": 0.02},

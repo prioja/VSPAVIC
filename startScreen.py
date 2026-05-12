@@ -17,7 +17,6 @@ from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle
 
 from researchLink import SESSION_START_RESEARCHER_REMINDERS, sendMonitorEvent
-from auctionCsv import write_polar_session_anchor
 
 
 class BigOption(SpinnerOption):  # Spinner menu text
@@ -165,11 +164,6 @@ class StartScreen(Screen):
             session_payload["treadmillSpeedSetting"] = getattr(st, "treadmillSpeedSetting", "")
             session_payload["heartRateBaselineSetting"] = getattr(st, "heartRateBaselineSetting", "")
             session_payload["preferredStiffnessNPerMm"] = stiffness_for_monitor
-            try:
-                anchor_path = write_polar_session_anchor(st)
-                print("Polar session anchor (heartRate --wait-for-tablet-start):", anchor_path)
-            except Exception as e:
-                print("write_polar_session_anchor failed:", e)
         sendMonitorEvent("session_started", session_payload)
         logger = getattr(app, "auctionCsv", None)
         if logger is not None and st is not None:

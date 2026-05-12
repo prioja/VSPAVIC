@@ -16,7 +16,6 @@ import os
 from datetime import datetime
 
 DATA_DIR = "data"
-POLAR_SESSION_ANCHOR_FILE = "polar_session_anchor.json"
 
 
 def conditionCodeFromUI(trialCondText):
@@ -62,38 +61,6 @@ def build_hr_polar_log_csv_path(state, data_dir=DATA_DIR):
 def build_ecg_polar_log_csv_path(state, data_dir=DATA_DIR):
     """ECG log path next to the HR Polar CSV."""
     return build_hr_polar_log_csv_path(state, data_dir).replace("_HR_polar.csv", "_ECG_polar.csv")
-
-
-def write_polar_session_anchor(state, data_dir=DATA_DIR, buffer_seconds=300.0):
-    """
-    Written at tablet START. Lets ``heartRate.py --wait-for-tablet-start`` connect and
-    stream HR *before* START, then lock ``anchorUnix`` and ``recordingDurationSeconds``
-    (auction total + buffer) when this file appears.
-    """
-    import json
-    import time
-
-    total = getattr(state, "totalAuctionSeconds", None)
-    try:
-        total_f = float(total) if total is not None else 0.0
-    except (TypeError, ValueError):
-        total_f = 0.0
-    buf = float(buffer_seconds)
-    path = os.path.join(data_dir, POLAR_SESSION_ANCHOR_FILE)
-    os.makedirs(data_dir, exist_ok=True)
-    payload = {
-        "schema": 1,
-        "subjectId": getattr(state, "subjectId", "") or "",
-        "trialCond": getattr(state, "trialCond", "") or "",
-        "trialNum": getattr(state, "trialNum", "") or "",
-        "totalAuctionSeconds": total_f,
-        "bufferSeconds": buf,
-        "recordingDurationSeconds": total_f + buf,
-        "anchorUnix": time.time(),
-    }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    return path
 
 
 def buildEventsCsvPath(state, dataDir=DATA_DIR):

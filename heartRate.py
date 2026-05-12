@@ -2,25 +2,24 @@
 """
 Polar HR (+ optional ECG) to CSV files matching auction session names.
 
-**Pre-auction streaming (recommended)** — connect and stream HR *before* START, then align
-timestamps when the tablet writes ``data/polar_session_anchor.json`` at START::
+No JSON or tablet handshake: pass subject / condition / trial and how long to record.
 
-    python3 heartRate.py --subject 001 --trial-cond "TH Low" --trial-num 1 --wait-for-tablet-start
-
-The tablet writes that anchor file when the participant presses START (``auctionCsv.write_polar_session_anchor``).
-``recordingDurationSeconds`` and ``anchorUnix`` in the file set the CSV clock and how long to keep
-draining after START (auction total + 5 min buffer from the app).
-
-**Standalone timing** (no tablet anchor)::
+From the ``betApp`` directory::
 
     python3 heartRate.py --subject 001 --trial-cond "TH Low" --trial-num 1 --duration-sec 3900
 
+Or auction length plus buffer::
+
+    python3 heartRate.py --subject 001 --trial-cond "TH Low" --trial-num 1 --total-auction-sec 3600 --buffer-sec 300
+
 Outputs under ``data/``:
 
-- ``…_HR_polar.csv`` — always written (pre-auction samples get negative ``seconds_since_auction_anchor``).
-- ``…_ECG_polar.csv`` — with ``--ecg`` only; ECG starts after the anchor when using ``--wait-for-tablet-start``.
+- ``…_HR_polar.csv`` — always written (header + rows; ``seconds_since_auction_anchor`` uses ``--anchor-unix`` or recording start).
+- ``…_ECG_polar.csv`` — with ``--ecg`` only (header-only if no samples).
 
-Uses ``VSPA_MONITOR_HOST`` / ``VSPA_MONITOR_PORT`` for monitor events when set.
+Uses ``VSPA_MONITOR_HOST`` / ``VSPA_MONITOR_PORT`` for ``hr_sensor_connected`` when set.
+
+On Ctrl+C or errors, partial data is flushed and CSVs are still written in ``finally``.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-import json
 import math
 import os
 import sys
@@ -38,12 +36,7 @@ from types import SimpleNamespace
 
 from bleak import BleakScanner
 
-from auctionCsv import (
-    DATA_DIR,
-    POLAR_SESSION_ANCHOR_FILE,
-    build_ecg_polar_log_csv_path,
-    build_hr_polar_log_csv_path,
-)
+from auctionCsv import DATA_DIR, build_ecg_polar_log_csv_path, build_hr_polar_log_csv_path
 from PolarH10 import PolarH10
 
 try:
@@ -55,18 +48,6 @@ except Exception:
 def unix_to_timestamp_12hr_local(t):
     dt = datetime.fromtimestamp(float(t))
     return dt.strftime("%Y-%m-%d %I:%M:%S %p")
-
-
-def _norm_field(x) -> str:
-    return " ".join(str(x or "").split()).strip().lower()
-
-
-def _anchor_matches_cli(anchor: dict, subject: str, trial_cond: str, trial_num: str) -> bool:
-    return (
-        _norm_field(anchor.get("subjectId")) == _norm_field(subject)
-        and _norm_field(anchor.get("trialCond")) == _norm_field(trial_cond)
-        and _norm_field(anchor.get("trialNum")) == _norm_field(trial_num)
-    )
 
 
 def _state_from_cli(subject: str, trial_cond: str, trial_num: str) -> SimpleNamespace:
@@ -194,47 +175,6 @@ async def wait_for_first_hr_samples(polar, hr_data, ecg_data, buf_pos, timeout_s
     return len(hr_data["times"])
 
 
-async def wait_for_tablet_anchor_file(
-    polar,
-    hr_data: dict,
-    ecg_data: dict,
-    buf_pos: list[int],
-    data_dir: str,
-    subject: str,
-    trial_cond: str,
-    trial_num: str,
-    timeout_sec: float,
-    poll_sec: float = 0.5,
-) -> dict:
-    """Poll for ``polar_session_anchor.json``; drain HR while waiting. Remove file when matched."""
-    path = os.path.join(os.path.abspath(data_dir), POLAR_SESSION_ANCHOR_FILE)
-    t0 = time.time()
-    while time.time() - t0 < timeout_sec:
-        drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
-        if os.path.isfile(path):
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-            except (OSError, json.JSONDecodeError):
-                await asyncio.sleep(poll_sec)
-                continue
-            if _anchor_matches_cli(data, subject, trial_cond, trial_num):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-                return data
-            print(
-                f"Anchor file at {path!r} does not match this CLI session; waiting for a new START…",
-                flush=True,
-            )
-        await asyncio.sleep(poll_sec)
-    raise SystemExit(
-        f"Timed out after {timeout_sec:.0f}s waiting for tablet anchor file {path!r}.\n"
-        "Press START on the tablet (same subject / condition / trial as this command)."
-    )
-
-
 async def collect_hr_ecg_for_duration(polar_device, hr_data, ecg_data, duration_sec, pos: list[int]):
     start = time.perf_counter()
     while True:
@@ -245,64 +185,35 @@ async def collect_hr_ecg_for_duration(polar_device, hr_data, ecg_data, duration_
         await asyncio.sleep(min(1.0, duration_sec - elapsed))
 
 
-async def collect_hr_ecg_until_wall_deadline(
-    polar_device, hr_data, ecg_data, pos: list[int], deadline_unix: float
-):
-    """Drain until ``time.time() >= deadline_unix`` (wall clock aligned with tablet anchor)."""
-    while time.time() < deadline_unix:
-        drain_polar_hr_ecg(polar_device, hr_data, ecg_data, pos)
-        rem = deadline_unix - time.time()
-        if rem <= 0:
-            break
-        await asyncio.sleep(min(1.0, max(0.05, rem)))
-
-
-def _send(ev: str, payload: dict) -> None:
-    if sendMonitorEvent is not None:
-        sendMonitorEvent(ev, payload)
-
-
 async def run_polar_session(
     cfg: dict,
     polar_name_substr: str,
     data_dir: str,
     *,
     enable_ecg: bool = False,
-    wait_for_tablet_start: bool = False,
-    anchor_wait_seconds: float = 7200.0,
 ):
+    anchor_unix = (
+        float(cfg["anchorUnix"])
+        if cfg.get("anchorUnix") is not None and str(cfg.get("anchorUnix")).strip() != ""
+        else time.time()
+    )
+    duration_sec = float(cfg.get("recordingDurationSeconds") or 0.0)
+    if duration_sec <= 0:
+        raise SystemExit(
+            "recordingDurationSeconds must be positive (use --duration-sec or --total-auction-sec)."
+        )
+
     st = _state_from_cli(cfg["subjectId"], cfg["trialCond"], cfg["trialNum"])
     hr_path = build_hr_polar_log_csv_path(st, data_dir=data_dir)
     ecg_path = build_ecg_polar_log_csv_path(st, data_dir=data_dir)
 
-    if wait_for_tablet_start:
-        anchor_unix: float | None = None
-        duration_sec: float | None = None
-        print(
-            f"Session: subject={st.subjectId!r} cond={st.trialCond!r} trial={st.trialNum!r}\n"
-            f"Mode: connect & stream HR first, then wait for tablet START anchor file.\n"
-            f"HR file -> {hr_path}\n"
-            f"ECG file -> {ecg_path} (only with --ecg; ECG begins after START anchor)\n",
-            flush=True,
-        )
-    else:
-        anchor_unix = (
-            float(cfg["anchorUnix"])
-            if cfg.get("anchorUnix") is not None and str(cfg.get("anchorUnix")).strip() != ""
-            else time.time()
-        )
-        duration_sec = float(cfg.get("recordingDurationSeconds") or 0.0)
-        if duration_sec <= 0:
-            raise SystemExit(
-                "recordingDurationSeconds must be positive (use --duration-sec or --total-auction-sec)."
-            )
-        print(
-            f"Session: subject={st.subjectId!r} cond={st.trialCond!r} trial={st.trialNum!r}\n"
-            f"Recording {duration_sec:.1f}s; anchor_unix={anchor_unix:.3f}\n"
-            f"HR file -> {hr_path}\n"
-            f"ECG file -> {ecg_path} (only if --ecg)\n",
-            flush=True,
-        )
+    print(
+        f"Session: subject={st.subjectId!r} cond={st.trialCond!r} trial={st.trialNum!r}\n"
+        f"Recording {duration_sec:.1f}s; anchor_unix={anchor_unix:.3f}\n"
+        f"HR file -> {hr_path}\n"
+        f"ECG file -> {ecg_path} (only if --ecg)\n",
+        flush=True,
+    )
 
     polar = None
     ecg_enabled = False
@@ -337,11 +248,11 @@ async def run_polar_session(
         if n0 == 0:
             print(
                 "No HR samples yet (strap/skin contact, Bluetooth, or wrong device). "
-                "Still waiting for tablet START / continuing where applicable.\n",
+                "Recording will continue — check sensor and BLE name filter.\n",
                 flush=True,
             )
 
-        if not wait_for_tablet_start and enable_ecg:
+        if enable_ecg:
             try:
                 await polar.start_ecg_stream()
                 ecg_enabled = True
@@ -349,82 +260,8 @@ async def run_polar_session(
             except Exception as exc:
                 print(f"ECG stream not started ({exc}); HR only.\n", flush=True)
 
-        if wait_for_tablet_start:
-            _send(
-                "hr_sensor_streaming_pre_auction",
-                {
-                    "label": "POLAR STREAMING (PRE-START)",
-                    "message": "HR stream live; waiting for tablet START to lock auction anchor.",
-                    "subjectId": st.subjectId,
-                    "trialCond": st.trialCond,
-                    "trialNum": st.trialNum,
-                    "hrCsvPath": os.path.basename(hr_path),
-                    "hrSamplesReceived": n0,
-                },
-            )
-            print(
-                f"Waiting for tablet START (file {POLAR_SESSION_ANCHOR_FILE!r} in {data_dir!r})…\n",
-                flush=True,
-            )
-            anchor_payload = await wait_for_tablet_anchor_file(
-                polar,
-                hr_data,
-                ecg_data,
-                buf_pos,
-                data_dir,
-                cfg["subjectId"],
-                cfg["trialCond"],
-                cfg["trialNum"],
-                timeout_sec=anchor_wait_seconds,
-            )
-            anchor_unix = float(anchor_payload["anchorUnix"])
-            duration_sec = float(anchor_payload.get("recordingDurationSeconds") or 0.0)
-            if duration_sec <= 0:
-                raise SystemExit(
-                    "Tablet anchor has recordingDurationSeconds <= 0 (check totalAuctionSeconds in the app)."
-                )
-            print(
-                f"Anchor locked: anchor_unix={anchor_unix:.3f}, recording {duration_sec:.1f}s from anchor.\n",
-                flush=True,
-            )
-            _send(
-                "hr_auction_anchor_locked",
-                {
-                    "label": "POLAR ANCHOR LOCKED",
-                    "message": "Tablet START received; Polar CSV timestamps use this anchor.",
-                    "subjectId": st.subjectId,
-                    "trialCond": st.trialCond,
-                    "trialNum": st.trialNum,
-                    "anchorUnix": anchor_unix,
-                    "recordingDurationSeconds": duration_sec,
-                    "hrCsvPath": os.path.basename(hr_path),
-                },
-            )
-            if enable_ecg:
-                try:
-                    await polar.start_ecg_stream()
-                    ecg_enabled = True
-                    drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
-                except Exception as exc:
-                    print(f"ECG stream not started ({exc}); HR only.\n", flush=True)
-
-            deadline = anchor_unix + duration_sec
-            now = time.time()
-            if now >= deadline:
-                print(
-                    "Warning: recording window already ended by wall clock at anchor read; saving buffered data.\n",
-                    flush=True,
-                )
-            else:
-                print("Recording post-START window… (Ctrl+C to abort)\n", flush=True)
-                try:
-                    await collect_hr_ecg_until_wall_deadline(
-                        polar, hr_data, ecg_data, buf_pos, deadline
-                    )
-                except BaseException as exc:
-                    interrupted = exc
-        else:
-            _send(
+        if sendMonitorEvent is not None:
+            sendMonitorEvent(
                 "hr_sensor_connected",
                 {
                     "label": "HR SENSOR CONNECTED",
@@ -440,11 +277,12 @@ async def run_polar_session(
                     "ecgEnabled": ecg_enabled,
                 },
             )
-            print("Recording… (Ctrl+C to abort)\n", flush=True)
-            try:
-                await collect_hr_ecg_for_duration(polar, hr_data, ecg_data, duration_sec, buf_pos)
-            except BaseException as exc:
-                interrupted = exc
+
+        print("Recording… (Ctrl+C to abort)\n", flush=True)
+        try:
+            await collect_hr_ecg_for_duration(polar, hr_data, ecg_data, duration_sec, buf_pos)
+        except BaseException as exc:
+            interrupted = exc
 
     except BaseException as exc:
         interrupted = exc
@@ -464,23 +302,15 @@ async def run_polar_session(
                 print(f"Polar disconnect cleanup: {cleanup_exc}", file=sys.stderr, flush=True)
 
         try:
-            au = anchor_unix
-            if au is None and (hr_data.get("times") or []):
-                au = time.time()
-                print(
-                    "Warning: no tablet anchor before exit; using wall time now for seconds_since_auction_anchor.",
-                    flush=True,
+            save_hr_csv(hr_path, hr_data, anchor_unix, partial=partial)
+            if enable_ecg:
+                save_ecg_csv(
+                    ecg_path,
+                    ecg_data,
+                    anchor_unix,
+                    partial=partial,
+                    allow_empty=True,
                 )
-            if au is not None:
-                save_hr_csv(hr_path, hr_data, au, partial=partial)
-                if enable_ecg:
-                    save_ecg_csv(
-                        ecg_path,
-                        ecg_data,
-                        au,
-                        partial=partial,
-                        allow_empty=True,
-                    )
         except Exception as save_exc:
             print(f"Could not save Polar CSV: {save_exc}", file=sys.stderr, flush=True)
 
@@ -489,33 +319,20 @@ async def run_polar_session(
 
 
 def main():
-    p = argparse.ArgumentParser(
-        description="Polar HR (+ optional ECG) to CSV; optional wait for tablet START anchor."
-    )
+    p = argparse.ArgumentParser(description="Polar HR (+ optional ECG) to CSV files.")
     p.add_argument("--subject", required=True, help="Subject ID (same as tablet)")
     p.add_argument("--trial-cond", required=True, dest="trial_cond", help='Condition spinner text, e.g. "TH Low"')
     p.add_argument("--trial-num", required=True, dest="trial_num", help="Trial number string")
-    p.add_argument(
-        "--wait-for-tablet-start",
-        action="store_true",
-        help="Connect & stream HR before START; lock anchor/duration from data/polar_session_anchor.json when START is pressed.",
-    )
-    p.add_argument(
-        "--anchor-wait-seconds",
-        type=float,
-        default=7200.0,
-        help="Max seconds to wait for tablet anchor when using --wait-for-tablet-start (default: 2 h).",
-    )
-    g = p.add_mutually_exclusive_group(required=False)
+    g = p.add_mutually_exclusive_group(required=True)
     g.add_argument(
         "--duration-sec",
         type=float,
-        help="Total recording window in seconds (ignored with --wait-for-tablet-start).",
+        help="Total recording window in seconds (e.g. auction length + buffer).",
     )
     g.add_argument(
         "--total-auction-sec",
         type=float,
-        help="Auction duration in seconds; with --buffer-sec (ignored with --wait-for-tablet-start).",
+        help="Auction duration in seconds; combined with --buffer-sec.",
     )
     p.add_argument(
         "--buffer-sec",
@@ -527,7 +344,7 @@ def main():
         "--anchor-unix",
         type=float,
         default=None,
-        help="Optional anchor for standalone mode (default: now at session start).",
+        help="Optional Unix time anchor for seconds_since_auction_anchor (default: now when recording starts).",
     )
     p.add_argument("--data-dir", default=DATA_DIR, help="Data directory (default: data)")
     p.add_argument(
@@ -538,30 +355,21 @@ def main():
     p.add_argument(
         "--ecg",
         action="store_true",
-        help="Enable Polar PMD ECG (after START anchor when using --wait-for-tablet-start).",
+        help="Enable Polar PMD ECG stream (writes ECG CSV).",
     )
     args = p.parse_args()
 
-    if args.wait_for_tablet_start:
-        if args.duration_sec is not None or args.total_auction_sec is not None:
-            p.error("With --wait-for-tablet-start, do not pass --duration-sec or --total-auction-sec.")
-        dur = 0.0
-        anchor = None
+    if args.duration_sec is not None:
+        dur = float(args.duration_sec)
     else:
-        if args.duration_sec is None and args.total_auction_sec is None:
-            p.error("Provide --duration-sec or --total-auction-sec, or use --wait-for-tablet-start.")
-        if args.duration_sec is not None:
-            dur = float(args.duration_sec)
-        else:
-            dur = float(args.total_auction_sec) + float(args.buffer_sec)
-        anchor = args.anchor_unix
+        dur = float(args.total_auction_sec) + float(args.buffer_sec)
 
     cfg = {
         "subjectId": args.subject,
         "trialCond": args.trial_cond,
         "trialNum": args.trial_num,
         "recordingDurationSeconds": dur,
-        "anchorUnix": anchor,
+        "anchorUnix": args.anchor_unix,
     }
 
     asyncio.run(
@@ -570,8 +378,6 @@ def main():
             args.polar_name.strip() or "Polar",
             args.data_dir,
             enable_ecg=args.ecg,
-            wait_for_tablet_start=args.wait_for_tablet_start,
-            anchor_wait_seconds=args.anchor_wait_seconds,
         )
     )
 

@@ -155,6 +155,23 @@ def _prettyLine(msg):
             return f"[{ts}] {title}\n Robotbids: [{bidsTxt}]"
         return f"[{ts}] {title}"
 
+    if ev == "hr_sensor_connected":
+        subj = payload.get("subjectId", "")
+        dur = payload.get("recordingDurationSeconds", "")
+        anc = payload.get("anchorUnix", "")
+        fn = payload.get("hrCsvPath", "")
+        lines = [
+            f"[{ts}] ---------- HR SENSOR CONNECTED ----------",
+            f"  Subject ID: {subj}",
+            f"  recordingDurationSeconds: {dur}",
+            f"  anchorUnix: {anc}",
+            f"  hrCsvPath: {fn}",
+        ]
+        msg = (payload.get("message") or "").strip()
+        if msg:
+            lines.append(f"  note: {msg}")
+        return "\n".join(lines)
+
     msgTxt = payload.get("message")
     if msgTxt:
         return f"[{ts}] {head}\n  {msgTxt}"

@@ -52,6 +52,51 @@ def buildSessionPaths(state, dataDir=DATA_DIR):
     return auctionPath, auctionFilename
 
 
+def build_hr_polar_log_csv_path(state, data_dir=DATA_DIR):
+    """Standalone Polar HR log path (same stem as auction CSV, distinct filename)."""
+    auction_path, _af = buildSessionPaths(state, data_dir)
+    root, _ext = os.path.splitext(auction_path)
+    return f"{root}_HR_polar.csv"
+
+
+HR_SESSION_SIDECAR = "hr_session_ready.json"
+
+
+def write_hr_session_sidecar(state, data_dir=DATA_DIR, buffer_seconds=300.0):
+    """
+    Written when the participant presses START on the tablet.
+
+    The standalone ``heartRate.py`` script polls for this file, uses
+    ``totalAuctionSeconds`` from the app plus ``buffer_seconds`` (default 5 min)
+    for recording length, and uses ``anchorUnix`` to align HR timestamps with the
+    auction session wall clock (same machine: adequate; across machines: use NTP).
+    """
+    import time
+
+    total = getattr(state, "totalAuctionSeconds", None)
+    try:
+        total_f = float(total) if total is not None else 0.0
+    except (TypeError, ValueError):
+        total_f = 0.0
+    buf = float(buffer_seconds)
+    path = os.path.join(data_dir, HR_SESSION_SIDECAR)
+    os.makedirs(data_dir, exist_ok=True)
+    cfg = {
+        "schema": 1,
+        "subjectId": getattr(state, "subjectId", "") or "",
+        "trialCond": getattr(state, "trialCond", "") or "",
+        "trialNum": getattr(state, "trialNum", "") or "",
+        "totalAuctionSeconds": total_f,
+        "bufferSeconds": buf,
+        "recordingDurationSeconds": total_f + buf,
+        "anchorUnix": time.time(),
+        "sessionStartTimestamp": getattr(state, "sessionStartTimestamp", "") or "",
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    return path
+
+
 def buildEventsCsvPath(state, dataDir=DATA_DIR):
     """Companion log for UI events (HELP / PAUSE), same folder as the auction CSV."""
     auctionPath, _af = buildSessionPaths(state, dataDir)

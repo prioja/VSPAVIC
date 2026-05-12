@@ -14,6 +14,9 @@ researcher when the Polar HR stream is live (``hr_sensor_connected``).
 
 HR CSV columns: wall timestamp (12h local), ``heart_rate_bpm``, ``seconds_since_auction_anchor``
 (Unix sample time minus ``anchorUnix`` from the sidecar; same machine = same clock).
+
+On Ctrl+C, process exit, or other errors during recording, any HR/ECG collected so far is flushed
+from the device buffers and written to the same CSV paths (header-only HR if no samples yet).
 """
 
 from __future__ import annotations
@@ -65,7 +68,7 @@ def _state_from_cfg(cfg: dict) -> SimpleNamespace:
     )
 
 
-def save_hr_csv(hr_path: str, hr_data: dict, anchor_unix: float) -> None:
+def save_hr_csv(hr_path: str, hr_data: dict, anchor_unix: float, *, partial: bool = False) -> None:
     os.makedirs(os.path.dirname(hr_path) or ".", exist_ok=True)
     times = hr_data.get("times") or []
     values = hr_data.get("values") or []
@@ -90,10 +93,11 @@ def save_hr_csv(hr_path: str, hr_data: dict, anchor_unix: float) -> None:
                     f"{tu:.6f}",
                 ]
             )
-    print(f"HR data saved to {hr_path}")
+    tag = " (partial / interrupted)" if partial else ""
+    print(f"HR data saved{tag} to {hr_path}")
 
 
-def save_ecg_csv(ecg_path: str, ecg_data: dict, anchor_unix: float) -> None:
+def save_ecg_csv(ecg_path: str, ecg_data: dict, anchor_unix: float, *, partial: bool = False) -> None:
     wall = ecg_data.get("wall_times") or []
     vals = ecg_data.get("values") or []
     if len(wall) == 0 or len(vals) != len(wall):
@@ -119,33 +123,42 @@ def save_ecg_csv(ecg_path: str, ecg_data: dict, anchor_unix: float) -> None:
                     f"{tu:.6f}",
                 ]
             )
-    print(f"ECG data saved to {ecg_path}")
+    tag = " (partial / interrupted)" if partial else ""
+    print(f"ECG data saved{tag} to {ecg_path}")
 
 
-async def collect_hr_ecg_for_duration(polar_device, hr_data, ecg_data, duration_sec):
-    hr_pos = 0
-    ecg_pos = 0
+def drain_polar_hr_ecg(polar_device, hr_data: dict, ecg_data: dict, pos: list[int]) -> None:
+    """Append any new HR/ECG samples from the device buffers into *hr_data* / *ecg_data*.
+    pos must be a two-element list [hr_pos, ecg_pos] updated in place.
+    """
+    hr_pos, ecg_pos = pos[0], pos[1]
+    hr = polar_device.get_hr_data()
+    nt = len(hr["times"])
+    if nt > hr_pos:
+        hr_data["times"].extend(hr["times"][hr_pos:].tolist())
+        hr_data["values"].extend(hr["values"][hr_pos:].tolist())
+        hr_pos = nt
+
+    ecg = polar_device.get_ecg_data()
+    ecg_n = len(ecg["values"])
+    if ecg_n > ecg_pos:
+        wall = ecg["wall_times"]
+        wall_len = len(wall) if hasattr(wall, "__len__") else 0
+        if wall_len >= ecg_n:
+            ecg_data["wall_times"].extend(list(wall[ecg_pos:ecg_n]))
+        else:
+            ecg_data["wall_times"].extend([float("nan")] * (ecg_n - ecg_pos))
+        ecg_data["values"].extend(ecg["values"][ecg_pos:ecg_n].tolist())
+        ecg_pos = ecg_n
+    pos[0] = hr_pos
+    pos[1] = ecg_pos
+
+
+async def collect_hr_ecg_for_duration(polar_device, hr_data, ecg_data, duration_sec, pos: list[int]):
     start = time.perf_counter()
     while (time.perf_counter() - start) < duration_sec:
         await asyncio.sleep(1)
-        hr = polar_device.get_hr_data()
-        nt = len(hr["times"])
-        if nt > hr_pos:
-            hr_data["times"].extend(hr["times"][hr_pos:].tolist())
-            hr_data["values"].extend(hr["values"][hr_pos:].tolist())
-            hr_pos = nt
-
-        ecg = polar_device.get_ecg_data()
-        ecg_n = len(ecg["values"])
-        if ecg_n > ecg_pos:
-            wall = ecg["wall_times"]
-            wall_len = len(wall) if hasattr(wall, "__len__") else 0
-            if wall_len >= ecg_n:
-                ecg_data["wall_times"].extend(list(wall[ecg_pos:ecg_n]))
-            else:
-                ecg_data["wall_times"].extend([float("nan")] * (ecg_n - ecg_pos))
-            ecg_data["values"].extend(ecg["values"][ecg_pos:ecg_n].tolist())
-            ecg_pos = ecg_n
+        drain_polar_hr_ecg(polar_device, hr_data, ecg_data, pos)
 
 
 async def run_polar_session(cfg: dict, polar_name_substr: str, data_dir: str):
@@ -204,18 +217,31 @@ async def run_polar_session(cfg: dict, polar_name_substr: str, data_dir: str):
 
         hr_data = {"times": [], "values": []}
         ecg_data = {"wall_times": [], "values": []}
+        buf_pos = [0, 0]
         print("Recording… (Ctrl+C to abort)\n", flush=True)
+        interrupted = None
         try:
-            await collect_hr_ecg_for_duration(polar, hr_data, ecg_data, duration_sec)
+            await collect_hr_ecg_for_duration(polar, hr_data, ecg_data, duration_sec, buf_pos)
+        except BaseException as exc:
+            interrupted = exc
         finally:
-            if ecg_enabled:
-                await polar.stop_ecg_stream()
-            await polar.stop_hr_stream()
-            await polar.disconnect()
-
-        save_hr_csv(hr_path, hr_data, anchor_unix)
-        if ecg_enabled and len(ecg_data.get("values") or []) > 0:
-            save_ecg_csv(ecg_path, ecg_data, anchor_unix)
+            drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
+            partial = interrupted is not None
+            try:
+                save_hr_csv(hr_path, hr_data, anchor_unix, partial=partial)
+                if ecg_enabled and len(ecg_data.get("values") or []) > 0:
+                    save_ecg_csv(ecg_path, ecg_data, anchor_unix, partial=partial)
+            except Exception as save_exc:
+                print(f"Could not save Polar CSV: {save_exc}", file=sys.stderr, flush=True)
+            try:
+                if ecg_enabled:
+                    await polar.stop_ecg_stream()
+                await polar.stop_hr_stream()
+                await polar.disconnect()
+            except Exception as cleanup_exc:
+                print(f"Polar disconnect cleanup: {cleanup_exc}", file=sys.stderr, flush=True)
+            if interrupted is not None:
+                raise interrupted
         return
 
     print("No Polar device found matching", repr(polar_name_substr))

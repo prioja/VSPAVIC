@@ -76,8 +76,14 @@ class VSPAVicApp(App):
         def _applyCfg(payload):
             try:
                 self.state.treadmillSpeedSetting = str(payload.get("treadmillSpeedSetting", "")).strip()
+                self.state.heartRateBaselineSetting = str(payload.get("heartRateBaselineSetting", "")).strip()
                 self.state.preferredStiffnessNPerMm = str(payload.get("preferredStiffnessNPerMm", "")).strip()
-                print("Applied researcher_config:", self.state.treadmillSpeedSetting, self.state.preferredStiffnessNPerMm)
+                print(
+                    "Applied researcher_config:",
+                    self.state.treadmillSpeedSetting,
+                    self.state.heartRateBaselineSetting,
+                    self.state.preferredStiffnessNPerMm,
+                )
 
                 # If treadmill speed looks numeric, apply it to the treadmill controller.
                 # This sets the speed used when the belts are started (e.g., on a win).

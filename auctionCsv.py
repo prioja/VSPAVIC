@@ -65,6 +65,20 @@ def _cell(value):
     return value
 
 
+def _trial_cond_is_vspa(state):
+    try:
+        return (state.trialCond or "").strip().startswith("VS")
+    except Exception:
+        return False
+
+
+def _preferred_stiffness_metadata(state):
+    """VSPA (VS*) trials use stored stiffness; other conditions log N/A."""
+    if not _trial_cond_is_vspa(state):
+        return "N/A"
+    return _cell(getattr(state, "preferredStiffnessNPerMm", ""))
+
+
 def _excel_text(value):
     """
     Prevent Excel from displaying ####### for narrow timestamp columns by forcing
@@ -188,7 +202,8 @@ class AuctionCsvLogger:
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
-                    w.writerow(["Preferred Stiffness (N/mm):", _cell(getattr(state, "preferredStiffnessNPerMm", ""))])
+                    w.writerow(["Heart Rate (Baseline):", _cell(getattr(state, "heartRateBaselineSetting", ""))])
+                    w.writerow(["Preferred Stiffness (N/mm):", _preferred_stiffness_metadata(state)])
                     w.writerow(["logType", "ui_events"])
                     w.writerow([])
                     w.writerow(self.EVENT_HEADERS)
@@ -235,7 +250,8 @@ class AuctionCsvLogger:
                     w.writerow(["Date:", _excel_text(_d)])
                     w.writerow(["Experiment Time:", _excel_text(_t)])
                     w.writerow(["Treadmill Speed:", _cell(getattr(state, "treadmillSpeedSetting", ""))])
-                    w.writerow(["Preferred Stiffness (N/mm):", _cell(getattr(state, "preferredStiffnessNPerMm", ""))])
+                    w.writerow(["Heart Rate (Baseline):", _cell(getattr(state, "heartRateBaselineSetting", ""))])
+                    w.writerow(["Preferred Stiffness (N/mm):", _preferred_stiffness_metadata(state)])
                     w.writerow([])  # blank line between metadata and table
 
                     # Table header + units row

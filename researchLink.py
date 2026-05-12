@@ -18,6 +18,8 @@ Short aliases are also accepted:
 Researcher machine (send config to tablet):
 
   python3 -m researchLink --send-config --tablet <TABLET_IP> --tablet-port 6000
+
+  Prompts: treadmill speed, heart-rate baseline, condition; preferred stiffness only if VS*.
 """
 
 import argparse
@@ -30,9 +32,9 @@ from datetime import datetime
 
 # Shown after total time / total rounds on `session_started` (monitor + JSON payload).
 SESSION_START_RESEARCHER_REMINDERS = (
-    "Please ensure COSMED is fitted.",
-    "Please ensure the heart-rate monitor is fitted.",
-    "Submit the total auction length (see totalTimeMinutes above) to the heart program.",
+    "Please ensure COSMED mask is fitted.",
+    "Please ensure the heartrate monitor is fitted.",
+    "Start heartrate program with total time.",
 )
 
 
@@ -114,6 +116,12 @@ def _prettyLine(msg):
                 lines.append(f"  totalTimeMinutes: {totalSeconds}")
         if totalRounds is not None and totalRounds != "":
             lines.append(f"  totalRounds: {totalRounds}")
+        if "treadmillSpeedSetting" in payload:
+            lines.append(f"  treadmillSpeedSetting: {payload.get('treadmillSpeedSetting', '')}")
+        if "heartRateBaselineSetting" in payload:
+            lines.append(f"  heartRateBaselineSetting: {payload.get('heartRateBaselineSetting', '')}")
+        if "preferredStiffnessNPerMm" in payload:
+            lines.append(f"  preferredStiffnessNPerMm: {payload.get('preferredStiffnessNPerMm', '')}")
         reminders = payload.get("researcherReminders")
         if not isinstance(reminders, (list, tuple)) or not reminders:
             reminders = SESSION_START_RESEARCHER_REMINDERS
@@ -124,14 +132,23 @@ def _prettyLine(msg):
         return "\n".join(lines)
 
     if ev == "round_started":
+        title = "ROUND STARTED"
+        try:
+            n = int(payload.get("roundNumber"))
+            if n >= 1:
+                title = f"ROUND {n} STARTED"
+        except (TypeError, ValueError):
+            lab = (payload.get("label") or "").strip()
+            if lab:
+                title = lab
         bids = payload.get("robotBidsLocked")
         if isinstance(bids, list):
             try:
                 bidsTxt = ", ".join(f"{float(x):.2f}" for x in bids)
             except Exception:
                 bidsTxt = ", ".join(str(x) for x in bids)
-            return f"[{ts}] ROUND STARTED\n  robotBids: [{bidsTxt}]"
-        return f"[{ts}] ROUND STARTED"
+            return f"[{ts}] {title}\n  robotBids: [{bidsTxt}]"
+        return f"[{ts}] {title}"
 
     msgTxt = payload.get("message")
     if msgTxt:
@@ -143,10 +160,12 @@ def sendResearcherConfig(
     tabletHost,
     tabletPort=6000,
     treadmillSpeed="",
+    heartRateBaseline="",
     preferredStiffness="",
 ):
     payload = {
         "treadmillSpeedSetting": treadmillSpeed,
+        "heartRateBaselineSetting": heartRateBaseline,
         "preferredStiffnessNPerMm": preferredStiffness,
     }
     msg = {"ts": time.time(), "event": "researcher_config", "payload": payload}
@@ -239,7 +258,11 @@ def main():
     p.add_argument("--port", type=int, default=5999)
     p.add_argument("--raw", action="store_true", help="Print raw JSON lines (no pretty formatting).")
     p.add_argument("--show-ip", action="store_true", help="Prefix lines with (ip, port).")
-    p.add_argument("--send-config", action="store_true", help="Prompt and send treadmill/stiffness to tablet.")
+    p.add_argument(
+        "--send-config",
+        action="store_true",
+        help="Prompt and send treadmill / HR baseline / stiffness (VS) to tablet.",
+    )
     p.add_argument("--tablet", type=str, default="", help="Tablet IP/hostname for --send-config.")
     p.add_argument("--tablet-port", type=int, default=6000, help="Tablet port for --send-config (default 6000).")
     p.add_argument(
@@ -259,6 +282,7 @@ def main():
             raise SystemExit("--tablet is required with --send-config")
 
         treadmillSpeed = input("treadmillSpeed: ").strip()
+        heartRateBaseline = input("heartRateBaseline (e.g. BPM): ").strip()
         cond = (args.condition or input("condition (VS/PF/TH) [optional]: ").strip()).upper()
         preferredStiffness = ""
         if cond.startswith("VS"):
@@ -268,6 +292,7 @@ def main():
             args.tablet,
             args.tablet_port,
             treadmillSpeed=treadmillSpeed,
+            heartRateBaseline=heartRateBaseline,
             preferredStiffness=preferredStiffness,
         )
         print("Sent researcher_config.")

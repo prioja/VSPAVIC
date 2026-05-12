@@ -144,6 +144,9 @@ class StartScreen(Screen):
             if isinstance(cfg, dict):
                 cfg = dict(cfg)
                 cfg.pop("preferredStiffnessNPerMm", None)
+        stiffness_for_monitor = (
+            getattr(st, "preferredStiffnessNPerMm", "") if isVspa else "N/A"
+        )
         session_payload = {
             "label": "SESSION STARTED",
             "message": "Participant pressed START",
@@ -160,8 +163,8 @@ class StartScreen(Screen):
         # Researcher-provided session settings (entered on researcher machine at app launch)
         if st is not None:
             session_payload["treadmillSpeedSetting"] = getattr(st, "treadmillSpeedSetting", "")
-            if isVspa:
-                session_payload["preferredStiffnessNPerMm"] = getattr(st, "preferredStiffnessNPerMm", "")
+            session_payload["heartRateBaselineSetting"] = getattr(st, "heartRateBaselineSetting", "")
+            session_payload["preferredStiffnessNPerMm"] = stiffness_for_monitor
         sendMonitorEvent("session_started", session_payload)
         logger = getattr(app, "auctionCsv", None)
         if logger is not None and st is not None:

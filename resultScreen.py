@@ -1,5 +1,5 @@
 """
-Round outcome screen: different layouts for win vs lose.
+Round outcome screen: logo + GIF + optional no-bid message + bid/payout summary.
 Reads `app.state.lastResult` on each visit.
 """
 
@@ -24,61 +24,43 @@ class ResultScreen(Screen):
 
         self.dismissEvent = None
 
-        root = BoxLayout(orientation="vertical", padding=40, spacing=20)
-
-        # Visual feedback (logo + animated gif)
-        self.logoImage = Image(source="", size_hint=(1, 0.55), allow_stretch=True, keep_ratio=True)
-        # Pillow-driven GIF (avoids Kivy/SDL GIF loader issues on some builds).
-        self.actionGif = PillowGifImage(fps=12.0, source="", size_hint=(1, 0.35))
-
-        self.winTitle = Label(text="You won this round.", font_size=56, bold=True, size_hint=(1, 0.12))
-        self.winBody = Label(
-            text="Please keep walking (per protocol).",
-            font_size=44,
-            size_hint=(1, 0.12),
+        root = BoxLayout(
+            orientation="vertical",
+            padding=[40, 200, 40, 40],
+            spacing=20,
         )
 
+        self.logoImage = Image(source="", size_hint=(1, 0.48), allow_stretch=True, keep_ratio=True)
+        self.actionGif = PillowGifImage(fps=12.0, source="", size_hint=(1, 0.52))
+
+        # Only used when the participant did not bid before the buzzer (see refresh).
         self.loseTitle = Label(
-            text="You did not win this round.",
-            font_size=56,
+            text="No bid was submitted before time expired.",
+            font_size=68,
             bold=True,
             size_hint=(1, 0.12),
+            halign="center",
+            valign="middle",
         )
-        self.loseBody = Label(
-            text="Please sit/rest (per protocol).",
-            font_size=44,
-            size_hint=(1, 0.12),
-        )
+        self.loseTitle.bind(size=self.loseTitle.setter("text_size"))
 
-        self.stack = BoxLayout(orientation="vertical", spacing=10, size_hint=(1, 0.35))
-        self.stack.add_widget(self.winTitle)
-        self.stack.add_widget(self.winBody)
-        self.stack.add_widget(self.loseTitle)
-        self.stack.add_widget(self.loseBody)
+        self.messageStack = BoxLayout(orientation="vertical", spacing=10, size_hint=(1, 0.35))
+        self.messageStack.add_widget(self.loseTitle)
 
         self.detailLabel = Label(
             text="",
-            font_size=36,
+            font_size=54,
             bold=True,
             halign="center",
             valign="middle",
-            size_hint=(1, 0.35),
+            size_hint=(1, 0.42),
         )
         self.detailLabel.bind(size=self.detailLabel.setter("text_size"))
 
-        self.hintLabel = Label(
-            text="",
-            font_size=36,
-            bold=True,
-            size_hint=(1, 0.1),
-        )
-        self.hintLabel.opacity = 0
-
         root.add_widget(self.logoImage)
         root.add_widget(self.actionGif)
-        root.add_widget(self.stack)
+        root.add_widget(self.messageStack)
         root.add_widget(self.detailLabel)
-        root.add_widget(self.hintLabel)
         self.add_widget(root)
 
         self.bind(on_pre_enter=self.refresh)
@@ -97,15 +79,14 @@ class ResultScreen(Screen):
         humanParticipated = bool(result.get("humanParticipated", True)) if isinstance(result, dict) else True
 
         if humanWon:
+            self.logoImage.size_hint_y = 0.48
+            self.actionGif.size_hint_y = 0.52
             self.logoImage.source = str(figsDir / "won_logo.png")
             self.actionGif.opacity = 1
             self.actionGif.start(str(figsDir / "walking.gif"))
-            self.winTitle.opacity = 0
-            self.winBody.opacity = 0
             self.loseTitle.opacity = 0
-            self.loseBody.opacity = 0
-            self.stack.opacity = 0
-            self.stack.size_hint_y = 0.001
+            self.messageStack.opacity = 0
+            self.messageStack.size_hint_y = 0.001
         else:
             self.logoImage.source = str(figsDir / "lost_logo.png")
             sittingGif = figsDir / "sitting.gif"
@@ -113,21 +94,22 @@ class ResultScreen(Screen):
                 self.actionGif.opacity = 1
                 self.actionGif.start(str(sittingGif))
             else:
-                # If the asset isn't present yet, don't break the flow.
                 self.actionGif.stop()
                 self.actionGif.opacity = 0
-            self.winTitle.opacity = 0
-            self.winBody.opacity = 0
+
             if humanParticipated:
-                self.loseTitle.text = "You did not win this round."
-                self.loseBody.text = "Please sit/rest (per protocol)."
+                self.loseTitle.opacity = 0
+                self.messageStack.opacity = 0
+                self.messageStack.size_hint_y = 0.001
+                self.logoImage.size_hint_y = 0.36
+                self.actionGif.size_hint_y = 0.64
             else:
                 self.loseTitle.text = "No bid was submitted before time expired."
-                self.loseBody.text = "Please sit/rest (per protocol)."
-            self.loseTitle.opacity = 1
-            self.loseBody.opacity = 1
-            self.stack.opacity = 1
-            self.stack.size_hint_y = 0.35
+                self.loseTitle.opacity = 1
+                self.messageStack.opacity = 1
+                self.messageStack.size_hint_y = 0.12
+                self.logoImage.size_hint_y = 0.32
+                self.actionGif.size_hint_y = 0.56
 
         if isinstance(result, dict):
             hb = result.get("humanBid", None)
@@ -140,14 +122,12 @@ class ResultScreen(Screen):
                 bidLine = f"Your bid: ${float(hb):.2f}"
             self.detailLabel.text = (
                 f"{bidLine}  |  Lowest bid: ${lowest:.2f}  |  "
-                f"Payout (2nd lowest): ${payout:.2f}\n"
+                f"Payout: ${payout:.2f}\n\n"
                 f"Total winnings: ${total:.2f}"
             )
         else:
             self.detailLabel.text = ""
 
-        # Intentionally hide any countdown text; the screen auto-dismisses silently.
-        self.hintLabel.text = ""
         self.scheduleDismiss()
 
     def cancelDismiss(self, *_):
@@ -177,8 +157,6 @@ class ResultScreen(Screen):
         except Exception:
             totalRounds = None
 
-        # roundIndex starts at -1 and increments on finalizeRound(), so after N rounds
-        # it will be N-1. Navigate to End when last round has been finalized.
         if totalRounds is not None and totalRounds > 0 and st is not None and st.roundIndex >= (totalRounds - 1):
             if hasattr(root, "has_screen") and root.has_screen("end"):
                 root.current = "end"

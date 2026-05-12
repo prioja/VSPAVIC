@@ -13,6 +13,21 @@ from kivy.metrics import dp
 
 from researchLink import sendMonitorEvent
 
+
+def _monitor_round_started_payload(st):
+    """1-based round # for researcher monitor (len(completed) + 1 for the round now starting)."""
+    n = 1
+    if st is not None:
+        n = len(getattr(st, "results", []) or []) + 1
+    return {
+        "label": f"ROUND {n} STARTED",
+        "roundNumber": n,
+        "roundIndex": getattr(st, "roundIndex", None) if st is not None else None,
+        "roundStartTimestamp": getattr(st, "roundStartTimestamp", None) if st is not None else None,
+        "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []) if st is not None else [],
+    }
+
+
 # ---------------- ROUND BUTTON ----------------
 class RoundedButton(Button):
     def __init__(self, bg=(0.5, 0.5, 0.5, 1), radius=15, **kwargs):
@@ -200,16 +215,7 @@ class BidScreen(Screen):
             # robot bids are now locked; emit them once.
             new_round_start = None if st is None else getattr(st, "roundStartPerf", None)
             if prev_round_start is None and new_round_start is not None:
-                self._emit_event(
-                    app,
-                    "round_started",
-                    {
-                        "label": "ROUND STARTED",
-                        "roundIndex": getattr(st, "roundIndex", None),
-                        "roundStartTimestamp": getattr(st, "roundStartTimestamp", None),
-                        "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []),
-                    },
-                )
+                self._emit_event(app, "round_started", _monitor_round_started_payload(st))
             print("Submitted (latest) bid:", bid)
         else:
             print("Submitted bid:", bid)
@@ -461,16 +467,7 @@ class BidScreen(Screen):
         st = getattr(app, "state", None)
         started_now = st is not None and getattr(st, "roundStartPerf", None) is not None and self._lastRoundStartPerf != getattr(st, "roundStartPerf", None)
         if started_now and not getattr(st, "pendingInstantRound", False):
-            self._emit_event(
-                app,
-                "round_started",
-                {
-                    "label": "ROUND STARTED",
-                    "roundIndex": getattr(st, "roundIndex", None),
-                    "roundStartTimestamp": getattr(st, "roundStartTimestamp", None),
-                    "robotBidsLocked": list(getattr(st, "robotBidsLocked", []) or []),
-                },
-            )
+            self._emit_event(app, "round_started", _monitor_round_started_payload(st))
         self._lastRoundStartPerf = None if st is None else getattr(st, "roundStartPerf", None)
 
         remaining = app.controller.getSecondsRemaining() if hasattr(app, "controller") else None

@@ -45,7 +45,8 @@ class State:
 
         # Researcher-provided session settings (sent from researcher machine at launch)
         self.treadmillSpeedSetting = ""  # free-form (e.g. "1.2 m/s" or "1.2")
-        self.preferredStiffnessNPerMm = ""  # free-form numeric text (N/mm)
+        self.heartRateBaselineSetting = ""  # free-form (e.g. BPM or notes)
+        self.preferredStiffnessNPerMm = ""  # free-form numeric text (N/mm); N/A for non-VSPA in CSV
 
 
 

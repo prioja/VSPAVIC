@@ -166,8 +166,41 @@ def _prettyLine(msg):
             f"  recordingDurationSeconds: {dur}",
             f"  anchorUnix: {anc}",
             f"  hrCsvPath: {fn}",
+            f"  ecgCsvPath: {payload.get('ecgCsvPath', '')}",
             f"  hrSamplesReceived: {payload.get('hrSamplesReceived', '')}",
             f"  ecgEnabled: {payload.get('ecgEnabled', '')}",
+        ]
+        msg = (payload.get("message") or "").strip()
+        if msg:
+            lines.append(f"  note: {msg}")
+        return "\n".join(lines)
+
+    if ev == "hr_sensor_streaming_pre_auction":
+        subj = payload.get("subjectId", "")
+        fn = payload.get("hrCsvPath", "")
+        n = payload.get("hrSamplesReceived", "")
+        lines = [
+            f"[{ts}] ---------- POLAR STREAMING (PRE-START) ----------",
+            f"  Subject ID: {subj}",
+            f"  hrCsvPath: {fn}",
+            f"  hrSamplesReceived: {n}",
+        ]
+        msg = (payload.get("message") or "").strip()
+        if msg:
+            lines.append(f"  note: {msg}")
+        return "\n".join(lines)
+
+    if ev == "hr_auction_anchor_locked":
+        subj = payload.get("subjectId", "")
+        anc = payload.get("anchorUnix", "")
+        dur = payload.get("recordingDurationSeconds", "")
+        fn = payload.get("hrCsvPath", "")
+        lines = [
+            f"[{ts}] ---------- POLAR ANCHOR LOCKED (TABLET START) ----------",
+            f"  Subject ID: {subj}",
+            f"  anchorUnix: {anc}",
+            f"  recordingDurationSeconds: {dur}",
+            f"  hrCsvPath: {fn}",
         ]
         msg = (payload.get("message") or "").strip()
         if msg:

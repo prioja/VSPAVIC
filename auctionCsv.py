@@ -12,11 +12,11 @@ Files (matches your terminal naming):
 """
 
 import csv
-import json
 import os
 from datetime import datetime
 
 DATA_DIR = "data"
+POLAR_SESSION_ANCHOR_FILE = "polar_session_anchor.json"
 
 
 def conditionCodeFromUI(trialCondText):
@@ -59,18 +59,18 @@ def build_hr_polar_log_csv_path(state, data_dir=DATA_DIR):
     return f"{root}_HR_polar.csv"
 
 
-HR_SESSION_SIDECAR = "hr_session_ready.json"
+def build_ecg_polar_log_csv_path(state, data_dir=DATA_DIR):
+    """ECG log path next to the HR Polar CSV."""
+    return build_hr_polar_log_csv_path(state, data_dir).replace("_HR_polar.csv", "_ECG_polar.csv")
 
 
-def write_hr_session_sidecar(state, data_dir=DATA_DIR, buffer_seconds=300.0):
+def write_polar_session_anchor(state, data_dir=DATA_DIR, buffer_seconds=300.0):
     """
-    Written when the participant presses START on the tablet.
-
-    The standalone ``heartRate.py`` script polls for this file, uses
-    ``totalAuctionSeconds`` from the app plus ``buffer_seconds`` (default 5 min)
-    for recording length, and uses ``anchorUnix`` to align HR timestamps with the
-    auction session wall clock (same machine: adequate; across machines: use NTP).
+    Written at tablet START. Lets ``heartRate.py --wait-for-tablet-start`` connect and
+    stream HR *before* START, then lock ``anchorUnix`` and ``recordingDurationSeconds``
+    (auction total + buffer) when this file appears.
     """
+    import json
     import time
 
     total = getattr(state, "totalAuctionSeconds", None)
@@ -79,9 +79,9 @@ def write_hr_session_sidecar(state, data_dir=DATA_DIR, buffer_seconds=300.0):
     except (TypeError, ValueError):
         total_f = 0.0
     buf = float(buffer_seconds)
-    path = os.path.join(data_dir, HR_SESSION_SIDECAR)
+    path = os.path.join(data_dir, POLAR_SESSION_ANCHOR_FILE)
     os.makedirs(data_dir, exist_ok=True)
-    cfg = {
+    payload = {
         "schema": 1,
         "subjectId": getattr(state, "subjectId", "") or "",
         "trialCond": getattr(state, "trialCond", "") or "",
@@ -90,10 +90,9 @@ def write_hr_session_sidecar(state, data_dir=DATA_DIR, buffer_seconds=300.0):
         "bufferSeconds": buf,
         "recordingDurationSeconds": total_f + buf,
         "anchorUnix": time.time(),
-        "sessionStartTimestamp": getattr(state, "sessionStartTimestamp", "") or "",
     }
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump(payload, f, indent=2)
     return path
 
 

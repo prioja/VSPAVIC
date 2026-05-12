@@ -124,6 +124,10 @@ class AuctionCsvLogger:
     UI events (HELP / PAUSE) append to a sibling ``*_events.csv`` file.
     """
 
+    # One column per robot (order matches ``robotBids`` / ``roboModel.robobidderlist``).
+    # Keep aligned with ``ExperimentController.robo_n``.
+    NUM_ROBO_CSV_BIDS = 2
+
     # Table columns (metadata like subject/condition/trial are written as a title block above)
     HEADERS = [
         "Round #",
@@ -131,6 +135,8 @@ class AuctionCsvLogger:
         "End Time",
         "Subject Bid",
         "Human Won",
+        "Robo 1 Bid",
+        "Robo 2 Bid",
         "Lowest Bid",
         "Vickrey Price",
         "Total Winnings",
@@ -144,6 +150,8 @@ class AuctionCsvLogger:
         "",
         "$",
         "",
+        "$",
+        "$",
         "$",
         "$",
         "$",
@@ -223,12 +231,18 @@ class AuctionCsvLogger:
         treadmillDistanceKm = result.get("treadmillDistanceKm")
         treadmillDistanceM = None if treadmillDistanceKm is None else float(treadmillDistanceKm) * 1000.0
 
+        rb = list(result.get("robotBids") or [])
+        robo_cells = []
+        for i in range(self.NUM_ROBO_CSV_BIDS):
+            robo_cells.append(_cell(rb[i]) if i < len(rb) else "")
+
         row = [
             result.get("roundIndex", ""),
             _excel_text(_time_only(result.get("roundStartTimestamp"))),
             _excel_text(_time_only(result.get("roundEndTimestamp", result.get("timestamp", "")))),
             result.get("humanBid", ""),
             result.get("humanWon", ""),
+            *robo_cells,
             result.get("lowestBid", ""),
             result.get("payout", ""),
             result.get("totalPayout", ""),

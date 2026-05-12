@@ -72,21 +72,25 @@ class PolarH10:
         self.acc_data = None
         self.ibi_data = None
     
-    def hr_data_conv(self, sender, data):  
-        """
-    
-        """
-        byte0 = data[0]  # flags byte
-        uint8_format = (byte0 & 1) == 0
-
-        if uint8_format:
-            hr = data[1]  # uint8 format
+    def hr_data_conv(self, sender, data):
+        """Decode GATT Heart Rate Measurement (0x2A37); append one BPM sample + host time."""
+        if data is None or len(data) < 2:
+            return
+        flags = data[0]
+        i = 1
+        if flags & 1:
+            if len(data) < i + 2:
+                return
+            hr = int.from_bytes(data[i : i + 2], byteorder="little", signed=False)
+            i += 2
         else:
-            hr = (data[2] << 8) | data[1]  # uint16 format
-
-        # Store heart rate data and the time at which it was received
+            hr = data[i]
+            i += 1
+        # Optional fields (we only need HR); skip so we never mis-read RR bytes as HR.
+        if flags & 8 and len(data) >= i + 2:
+            i += 2
         self.hr_values.append(hr)
-        self.hr_times.append(time.time_ns() / 1.0e9)  # time in seconds since epoch
+        self.hr_times.append(time.time_ns() / 1.0e9)
             
     def acc_data_conv(self, sender, data): 
     # [02 EA 54 A2 42 8B 45 52 08 01 45 FF E4 FF B5 03 45 FF E4 FF B8 03 ...]
@@ -245,5 +249,5 @@ class PolarH10:
     # Add additional functions to access heart rate data if needed  PR
     def get_hr_data(self):
         hr_times = np.array(self.hr_times)
-        hr_data = {'times': hr_times, 'values': np.array(self.hr_values)}
+        hr_data = {"times": hr_times, "values": np.array(self.hr_values)}
         return hr_data

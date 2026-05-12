@@ -9,6 +9,9 @@ From the ``betApp`` directory::
 
     python3 heartRate.py
 
+ECG is **off** by default (Polar PMD can prevent HR notifications on some machines). Use ``--ecg`` to
+enable ECG streaming alongside HR.
+
 Uses ``VSPA_MONITOR_HOST`` / ``VSPA_MONITOR_PORT`` (or ``HOST`` / ``PORT``) to notify the
 researcher when the Polar HR stream is live (``hr_sensor_connected``).
 
@@ -133,10 +136,12 @@ def drain_polar_hr_ecg(polar_device, hr_data: dict, ecg_data: dict, pos: list[in
     """
     hr_pos, ecg_pos = pos[0], pos[1]
     hr = polar_device.get_hr_data()
-    nt = len(hr["times"])
+    lt = len(hr["times"])
+    lv = len(hr["values"])
+    nt = min(lt, lv)
     if nt > hr_pos:
-        hr_data["times"].extend(hr["times"][hr_pos:].tolist())
-        hr_data["values"].extend(hr["values"][hr_pos:].tolist())
+        hr_data["times"].extend(hr["times"][hr_pos:nt].tolist())
+        hr_data["values"].extend(hr["values"][hr_pos:nt].tolist())
         hr_pos = nt
 
     ecg = polar_device.get_ecg_data()
@@ -154,14 +159,32 @@ def drain_polar_hr_ecg(polar_device, hr_data: dict, ecg_data: dict, pos: list[in
     pos[1] = ecg_pos
 
 
+async def wait_for_first_hr_samples(polar, hr_data, ecg_data, buf_pos, timeout_sec=25.0) -> int:
+    """Poll BLE buffers until at least one HR sample is copied into *hr_data* or *timeout_sec* elapses."""
+    deadline = time.perf_counter() + timeout_sec
+    while time.perf_counter() < deadline:
+        drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
+        n = len(hr_data["times"])
+        if n > 0:
+            return n
+        await asyncio.sleep(0.25)
+    drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
+    return len(hr_data["times"])
+
+
 async def collect_hr_ecg_for_duration(polar_device, hr_data, ecg_data, duration_sec, pos: list[int]):
     start = time.perf_counter()
-    while (time.perf_counter() - start) < duration_sec:
-        await asyncio.sleep(1)
+    while True:
         drain_polar_hr_ecg(polar_device, hr_data, ecg_data, pos)
+        elapsed = time.perf_counter() - start
+        if elapsed >= duration_sec:
+            break
+        await asyncio.sleep(min(1.0, duration_sec - elapsed))
 
 
-async def run_polar_session(cfg: dict, polar_name_substr: str, data_dir: str):
+async def run_polar_session(
+    cfg: dict, polar_name_substr: str, data_dir: str, *, enable_ecg: bool = False
+):
     duration_sec = float(cfg.get("recordingDurationSeconds") or 0.0)
     anchor_unix = float(cfg.get("anchorUnix") or time.time())
     if duration_sec <= 0:
@@ -193,12 +216,28 @@ async def run_polar_session(cfg: dict, polar_name_substr: str, data_dir: str):
         await polar.get_device_info()
         await polar.print_device_info()
         await polar.start_hr_stream()
+        await asyncio.sleep(0.5)
+
+        hr_data = {"times": [], "values": []}
+        ecg_data = {"wall_times": [], "values": []}
+        buf_pos = [0, 0]
+
+        n0 = await wait_for_first_hr_samples(polar, hr_data, ecg_data, buf_pos, timeout_sec=25.0)
+        if n0 == 0:
+            print(
+                "No HR samples yet (strap/skin contact, Bluetooth, or wrong device). "
+                "Recording will continue — if still empty, check the sensor and BLE name filter.\n",
+                flush=True,
+            )
+
         ecg_enabled = False
-        try:
-            await polar.start_ecg_stream()
-            ecg_enabled = True
-        except Exception as exc:
-            print(f"ECG stream not started ({exc}); HR only.\n", flush=True)
+        if enable_ecg:
+            try:
+                await polar.start_ecg_stream()
+                ecg_enabled = True
+                drain_polar_hr_ecg(polar, hr_data, ecg_data, buf_pos)
+            except Exception as exc:
+                print(f"ECG stream not started ({exc}); HR only.\n", flush=True)
 
         if sendMonitorEvent is not None:
             sendMonitorEvent(
@@ -212,12 +251,11 @@ async def run_polar_session(cfg: dict, polar_name_substr: str, data_dir: str):
                     "recordingDurationSeconds": duration_sec,
                     "anchorUnix": anchor_unix,
                     "hrCsvPath": os.path.basename(hr_path),
+                    "hrSamplesReceived": n0,
+                    "ecgEnabled": ecg_enabled,
                 },
             )
 
-        hr_data = {"times": [], "values": []}
-        ecg_data = {"wall_times": [], "values": []}
-        buf_pos = [0, 0]
         print("Recording… (Ctrl+C to abort)\n", flush=True)
         interrupted = None
         try:
@@ -266,13 +304,25 @@ def main():
         default=os.environ.get("VSPA_POLAR_NAME", "Polar"),
         help="Substring to match BLE device name (default: Polar)",
     )
+    p.add_argument(
+        "--ecg",
+        action="store_true",
+        help="Enable Polar PMD ECG stream (default: HR only). ECG can block or starve HR on some hosts.",
+    )
     args = p.parse_args()
 
     cfg_path = os.path.abspath(args.config)
     print(f"Waiting for session sidecar: {cfg_path}")
     cfg = wait_for_config(cfg_path, args.wait_seconds)
 
-    asyncio.run(run_polar_session(cfg, args.polar_name.strip() or "Polar", args.data_dir))
+    asyncio.run(
+        run_polar_session(
+            cfg,
+            args.polar_name.strip() or "Polar",
+            args.data_dir,
+            enable_ecg=args.ecg,
+        )
+    )
 
 
 if __name__ == "__main__":

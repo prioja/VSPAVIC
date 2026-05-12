@@ -166,6 +166,8 @@ def _prettyLine(msg):
             f"  recordingDurationSeconds: {dur}",
             f"  anchorUnix: {anc}",
             f"  hrCsvPath: {fn}",
+            f"  hrSamplesReceived: {payload.get('hrSamplesReceived', '')}",
+            f"  ecgEnabled: {payload.get('ecgEnabled', '')}",
         ]
         msg = (payload.get("message") or "").strip()
         if msg:

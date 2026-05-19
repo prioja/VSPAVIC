@@ -3,6 +3,19 @@ from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.label import Label
+
+
+class PassthroughLabel(Label):
+    """Overlay label that does not block touches to widgets below (e.g. timer over SUBMIT)."""
+
+    def on_touch_down(self, touch):
+        return False
+
+    def on_touch_move(self, touch):
+        return False
+
+    def on_touch_up(self, touch):
+        return False
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.button import Button
 from kivy.graphics import Color, RoundedRectangle, Rectangle
@@ -12,6 +25,7 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 
 from researchLink import sendMonitorEvent
+from roundedButton import RoundedButton
 
 
 def _monitor_round_started_payload(st, controller=None):
@@ -34,28 +48,6 @@ def _monitor_round_started_payload(st, controller=None):
             out["roboModel"] = {}
     return out
 
-
-# ---------------- ROUND BUTTON ----------------
-class RoundedButton(Button):
-    def __init__(self, bg=(0.5, 0.5, 0.5, 1), radius=15, **kwargs):
-        super().__init__(**kwargs)
-
-        self.background_normal = ""
-        self.background_color = (0, 0, 0, 0)
-
-        with self.canvas.before:
-            self.color_instr = Color(*bg)
-            self.rect = RoundedRectangle(
-                pos=self.pos,
-                size=self.size,
-                radius=[radius]
-            )
-
-        self.bind(pos=self.update_rect, size=self.update_rect)
-
-    def update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
 
 class BidScreen(Screen):
     def __init__(self, **kw):
@@ -87,7 +79,7 @@ class BidScreen(Screen):
 
         layout2 = BoxLayout(orientation="vertical",size_hint=(1,0.8), padding=30, spacing=30)
         header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 55, bold=True)
-        self.timerLabel = Label(
+        self.timerLabel = PassthroughLabel(
             text="Round: --:--",
             font_size=90,
             bold=True,
@@ -109,12 +101,17 @@ class BidScreen(Screen):
             btn.bind(on_press=self.onButtonPress)
             grid.add_widget(btn)
 
-        self.submitBtn = Button(text="SUBMIT",size_hint=(0.15, 0.05),pos_hint={"center_x": 0.5},font_size=50, bold=True, disabled=True,background_normal="",background_color=(0, 0, 0, 0))
-        
-        with self.submitBtn.canvas.before:
-            self.btnColor = Color(0.5, 0.5, 0.5, 1)
-            self.submitRect = RoundedRectangle(size=self.submitBtn.size,pos=self.submitBtn.pos,radius=[15])
-        self.submitBtn.bind(pos=self.updateRect, size=self.updateRect)
+        self.submitBtn = RoundedButton(
+            text="SUBMIT",
+            bg=(0.5, 0.5, 0.5, 1),
+            size_hint=(0.22, 0.08),
+            size_hint_min=(dp(160), dp(52)),
+            pos_hint={"center_x": 0.5},
+            font_size=50,
+            bold=True,
+            disabled=True,
+            color=(1, 1, 1, 1),
+        )
         self.submitBtn.bind(on_press=self.onSubmit)
 
         
@@ -155,10 +152,10 @@ class BidScreen(Screen):
 
         if self.cents == 0:
             self.submitBtn.disabled = True
-            self.btnColor.rgb = (0.5, 0.5, 0.5)  # gray
+            self.submitBtn.set_bg((0.5, 0.5, 0.5, 1))
         else:
             self.submitBtn.disabled = False
-            self.btnColor.rgb = (0.2, 0.7, 0.2)  # green
+            self.submitBtn.set_bg((0.2, 0.7, 0.2, 1))
 
     def onButtonPress(self, instance):# --------------------- keypad logic -------------------------
         text = instance.text
@@ -172,9 +169,26 @@ class BidScreen(Screen):
 
         self.updateDisplay()
 
-    def updateRect(self, *args): # round button
-        self.submitRect.pos = self.submitBtn.pos
-        self.submitRect.size = self.submitBtn.size
+    def _complete_instant_submit(self, bid):
+        app = App.get_running_app()
+        st = getattr(app, "state", None)
+        if not hasattr(app, "controller"):
+            return
+        app.controller.submitBidForCurrentRound(bid)
+        self._emit_event(
+            app,
+            "bid_submitted",
+            {
+                "label": "BID SUBMITTED",
+                "bid": bid,
+                "phase": "instant_round",
+                "roundIndex": getattr(st, "roundIndex", None) if st else None,
+            },
+        )
+        result = app.controller.finalizeRound()
+        print("Round finalized (instant first round):", result)
+        self.resetKeypad()
+        self.goToResult()
 
     def onSubmit(self, *_):
         app = App.get_running_app()
@@ -185,21 +199,11 @@ class BidScreen(Screen):
         if hasattr(app, "controller"):
             # First round after START: one submit finalizes immediately.
             if st is not None and getattr(st, "pendingInstantRound", False):
-                app.controller.submitBidForCurrentRound(bid)
-                self._emit_event(
-                    app,
-                    "bid_submitted",
-                    {
-                        "label": "BID SUBMITTED",
-                        "bid": bid,
-                        "phase": "instant_round",
-                        "roundIndex": getattr(st, "roundIndex", None),
-                    },
+                # Brief delay so press color is visible before leaving this screen.
+                Clock.schedule_once(
+                    lambda _dt, b=bid: self._complete_instant_submit(b),
+                    0.1,
                 )
-                result = app.controller.finalizeRound()
-                print("Round finalized (instant first round):", result)
-                self.resetKeypad()
-                self.goToResult()
                 return
 
             # Timed rounds: Submit can be pressed multiple times; only the last one counts.

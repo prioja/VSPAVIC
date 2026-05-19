@@ -187,6 +187,30 @@ class ExperimentController:
             return self.resumeAuction()
         return self.pauseAuction()
 
+    def _round_walk_duration_minutes(self, round_start_perf, round_end_perf):
+        """Wall-clock minutes for this round (used as Δt on the robo walk curve)."""
+        if round_start_perf is None:
+            return 0.0
+        end = round_end_perf if round_end_perf is not None else time.perf_counter()
+        return max(0.0, (end - round_start_perf) / 60.0)
+
+    def _lowest_bid_winner_indices(self, current_bids):
+        if not current_bids:
+            return []
+        lowest = min(current_bids)
+        return [i for i, b in enumerate(current_bids) if b == lowest]
+
+    def _apply_walk_to_tied_robo_winners(self, winner_indices, human_participated, walk_dt_minutes):
+        """Every robot tied at the lowest bid walks (2-way or 3-way ties included)."""
+        if walk_dt_minutes <= 0.0:
+            return
+        for idx in winner_indices:
+            if human_participated and idx == 0:
+                continue
+            robo_idx = idx - 1 if human_participated else idx
+            if 0 <= robo_idx < len(self.roboModel.robobidderlist):
+                self.roboModel.robobidderlist[robo_idx].walk_for_duration(walk_dt_minutes)
+
     def finalizeRound(self):
         """
         Finalize one round using the LAST submitted human bid.
@@ -208,25 +232,21 @@ class ExperimentController:
         )
         self.state.currentBids = currentBids
 
-        lowestBid = min(currentBids)
-        lowestBidIdx = currentBids.index(lowestBid)  # 0 means human (only if humanParticipated)
+        lowestBid = min(currentBids) if currentBids else None
+        winner_indices = self._lowest_bid_winner_indices(currentBids)
         sortedBids = sorted(currentBids)
         payout = sortedBids[1] if len(sortedBids) > 1 else sortedBids[0]
 
-        humanWon = humanParticipated and lowestBidIdx == 0
+        humanWon = humanParticipated and 0 in winner_indices
         if humanWon:
             self.state.totalPayout += payout
-        else:
-            # Update the winning robot's "walk" model so future bids change.
-            # This mirrors your terminal logic at a high level.
-            # (We don't yet have per-round timing wired in, so we use roundIndex as a simple proxy.)
-            if humanParticipated:
-                winnerRobot = self.roboModel.robobidderlist[lowestBidIdx - 1]
-            else:
-                winnerRobot = self.roboModel.robobidderlist[lowestBidIdx]
-            tEnd = float(self.state.roundIndex + 1)
-            tStart = float(self.state.roundIndex)
-            winnerRobot.walk(tEnd, tStart)
+
+        walk_dt_minutes = self._round_walk_duration_minutes(
+            self.state.roundStartPerf, roundEndPerf
+        )
+        self._apply_walk_to_tied_robo_winners(
+            winner_indices, humanParticipated, walk_dt_minutes
+        )
 
         result = {
             "timestamp": roundEndTimestamp,

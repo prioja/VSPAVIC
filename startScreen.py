@@ -13,10 +13,8 @@ from kivy.uix.textinput import TextInput
 from kivy.uix.spinner import Spinner
 from kivy.uix.spinner import SpinnerOption
 from kivy.uix.image import Image
-from kivy.uix.button import Button
-from kivy.graphics import Color, RoundedRectangle
-
 from researchLink import SESSION_START_RESEARCHER_REMINDERS, sendMonitorEvent
+from roundedButton import RoundedButton
 
 
 class BigOption(SpinnerOption):  # Spinner menu text
@@ -24,24 +22,6 @@ class BigOption(SpinnerOption):  # Spinner menu text
         super().__init__(**kwargs)
         self.font_size = 42
         self.bold = True
-
-
-class RoundedButton(Button):  # Rounded yellow button
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-        self.background_normal = ""
-        self.background_color = (0, 0, 0, 0)
-
-        with self.canvas.before:
-            Color(0.965, 0.784, 0.208, 1)
-            self.rect = RoundedRectangle(radius=[15], pos=self.pos, size=self.size)
-
-        self.bind(pos=self.update_rect, size=self.update_rect)
-
-    def update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
 
 
 class StartLayout(BoxLayout):
@@ -80,6 +60,7 @@ class StartLayout(BoxLayout):
         # --- BEGIN BUTTON (ROUNDED) ---
         self.beginBtn = RoundedButton(
             text="START",
+            bg=(0.965, 0.784, 0.208, 1),
             size_hint=(0.15, 0.15),
             pos_hint={"center_x": 0.5},
             disabled=True,

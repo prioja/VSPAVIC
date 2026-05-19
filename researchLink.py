@@ -114,7 +114,7 @@ def _prettyLine(msg):
         ]
         if totalSeconds is not None and totalSeconds != "":
             try:
-                lines.append(f"  totalTimeMinutes: {float(totalSeconds) / 60.0:.2f}")
+                lines.append(f"  Total Time (min): {float(totalSeconds) / 60.0:.2f}")
             except Exception:
                 lines.append(f"  totalTimeMinutes: {totalSeconds}")
         if totalRounds is not None and totalRounds != "":
@@ -302,11 +302,11 @@ def main():
         if not args.tablet:
             raise SystemExit("--tablet is required with --send-config")
 
-        treadmillSpeed = input("treadmillSpeed: ").strip()
-        cond = (args.condition or input("condition (VS/PF/TH) [optional]: ").strip()).upper()
+        treadmillSpeed = input("Treadmill Speed (m/s): ").strip()
+        cond = (args.condition or input("Trial Condition (TH/PF/VS) [optional]: ").strip()).upper()
         preferredStiffness = ""
         if cond.startswith("VS"):
-            preferredStiffness = input("preferredStiffnessNPerMm: ").strip()
+            preferredStiffness = input("Preferred Stiffness (N/mm: ").strip()
 
         sendResearcherConfig(
             args.tablet,

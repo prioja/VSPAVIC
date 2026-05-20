@@ -172,7 +172,7 @@ class BidScreen(Screen):
         can_bid = bool(enabled)
         self.submitBtn.disabled = not can_bid
         if can_bid:
-            self.updateSubmitColor()
+            self.updateDisplay()
         else:
             self.submitBtn.set_bg((0.5, 0.5, 0.5, 1))
         for btn in self._keypadButtons:

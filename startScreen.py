@@ -152,7 +152,7 @@ class StartScreen(Screen):
 
         hardware = getattr(app, "hardware", None)
         if hardware is not None and getattr(hardware, "enabled", False):
-            hardware.prepareSession()
+            hardware.prepareSession_async()
 
         print("=== STARTING EXPERIMENT ===", flush=True)
         print("Subject ID:", subjectId, flush=True)

@@ -6,6 +6,7 @@ Treadmill control for the Bertec over TCP (via `BertecMan.Bertec`).
 """
 
 import os
+import threading
 import time
 
 from BertecMan import Bertec
@@ -116,7 +117,7 @@ class TreadmillHardware:
             return self.lastMotionState == "walking"
 
     def prepareSession(self):
-        """Belts stopped, incline set to default (non-blocking)."""
+        """Belts stopped, incline set to default. Runs on a worker thread from the GUI."""
         if not self.enabled:
             return
         self.connect()
@@ -128,6 +129,19 @@ class TreadmillHardware:
         self.setIncline(self.defaultInclineDeg)
         self.stopBelts()
         self.lastMotionState = "stopped"
+
+    def prepareSession_async(self):
+        """Non-blocking version for START — avoids freezing if Bertec is unreachable."""
+        if not self.enabled:
+            return
+
+        def _run():
+            try:
+                self.prepareSession()
+            except Exception as e:
+                print("TreadmillHardware: prepareSession_async failed:", e)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def readMetrics(self):
         """

@@ -50,8 +50,9 @@ class Bertec:
 
         print("Attempting to connect to socket")
 
-        # Setup TCP
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        # Setup TCP (timeout so a missing Bertec host cannot freeze the Kivy UI).
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.settimeout(5.0)
         self.sock.connect((self.destinationIP, self.destinationPort))
 
         print("Successfully connected to socket")

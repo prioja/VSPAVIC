@@ -1,0 +1,11 @@
+subjID:,001
+Condition:,TH ~ Take Home
+Trial #:,1
+Date:,"=""05-20-2026"""
+Experiment Time:,"=""05:06:14 PM"""
+Treadmill Speed:,
+Preferred Stiffness (N/mm):,N/A
+
+Round #,Start Time,End Time,Subject Bid,Human Won,Robo 1 Bid,Robo 2 Bid,Lowest Bid,Vickrey Price,Total Winnings,Distance
+,,,$,,$,$,$,$,$,m
+0,"=""05:06:21 PM""","=""05:06:21 PM""",0.15,True,0.44,0.45,0.15,0.44,0.44,0.0

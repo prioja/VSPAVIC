@@ -21,9 +21,16 @@ class State:
         # First round after START: submit finalizes immediately (no 2-min timer).
         self.pendingInstantRound = False
 
-        # Pause (timed rounds only): freezes countdown by shifting roundEndPerf forward.
+        # Pause (walking or rest-bid countdown): freezes active phase timer.
         self.auctionPaused = False
         self.pauseRemainingSeconds = None
+
+        # Walking phase between rest breaks (round 2+); belts follow last round outcome.
+        self.inWalkingPhase = False
+        self.walkingStartPerf = None
+        self.walkingEndPerf = None
+        # Robot walk Δt from the last completed walking segment (minutes).
+        self.pendingWalkMinutesForRobots = 0.0
 
         # Current round values
         self.humanBid = 0.0

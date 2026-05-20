@@ -74,11 +74,11 @@ class BidScreen(Screen):
             color=(0, 0, 0, 1),
         )
         self.helpBtn = RoundedButton(text="HELP", bg=(0.86, 0.08, 0.2, 1), **_side_btn_kw)
-        logo = Image(source="figs/logo.png", size_hint=(0.25, 1)) 
+        logo = Image(source="figs/logo.png", size_hint=(0.25, 0.6), pos_hint={"center_y": 0.7}) 
         self.pauseBtn = RoundedButton(text="PAUSE", bg=(0.965, 0.784, 0.208, 1), **_side_btn_kw)
 
-        layout2 = BoxLayout(orientation="vertical",size_hint=(1,0.8), padding=30, spacing=30)
-        header = Label(text = "PLEASE PLACE BID", size_hint=(1, 0.05), font_size = 55, bold=True)
+        # FloatLayout so pos_hint actually moves widgets (BoxLayout ignores it).
+        layout2 = FloatLayout(size_hint=(1, 0.8))
         self.timerLabel = PassthroughLabel(
             text="Round: --:--",
             font_size=90,
@@ -87,8 +87,19 @@ class BidScreen(Screen):
             pos_hint={"x": 0.1, "y": 0.02},
         )
         self.timerLabel.opacity = 0
-        self.display = Label(text=self.formatMoney(), font_size = 330, size_hint=(1, 0.2), pos_hint={"center_y": 0.2})
-        grid = GridLayout(cols=3, spacing=10, size_hint=(.45,0.25), pos_hint={"center_x": 0.5})
+        self.display = Label(
+            text=self.formatMoney(),
+            font_size=330,
+            size_hint=(1, 0.2),
+            pos_hint={"center_x": 0.5, "center_y": 0.9},
+        )
+        self.keypadGrid = GridLayout(
+            cols=3,
+            spacing=10,
+            size_hint=(0.45, 0.6),
+            pos_hint={"center_x": 0.5, "center_y": 0.45},
+        )
+        self._keypadButtons = []
         buttons = [
             "1", "2", "3",
             "4", "5", "6",
@@ -99,15 +110,16 @@ class BidScreen(Screen):
         for b in buttons:
             btn = Button(text=b, font_size=90, bold=True)
             btn.bind(on_press=self.onButtonPress)
-            grid.add_widget(btn)
+            self._keypadButtons.append(btn)
+            self.keypadGrid.add_widget(btn)
 
         self.submitBtn = RoundedButton(
             text="SUBMIT",
             bg=(0.5, 0.5, 0.5, 1),
             size_hint=(0.22, 0.08),
             size_hint_min=(dp(160), dp(52)),
-            pos_hint={"center_x": 0.5},
-            font_size=50,
+            pos_hint={"center_x": 0.5, "y": 0.03},
+            font_size=60,
             bold=True,
             disabled=True,
             color=(1, 1, 1, 1),
@@ -122,9 +134,8 @@ class BidScreen(Screen):
         layout1.add_widget(self.pauseBtn)
         
 
-        layout2.add_widget(header)
+        layout2.add_widget(self.keypadGrid)
         layout2.add_widget(self.display)
-        layout2.add_widget(grid)
         layout2.add_widget(self.submitBtn)
 
         body.add_widget(layout1)
@@ -157,7 +168,19 @@ class BidScreen(Screen):
             self.submitBtn.disabled = False
             self.submitBtn.set_bg((0.2, 0.7, 0.2, 1))
 
+    def _set_bid_inputs_enabled(self, enabled):
+        can_bid = bool(enabled)
+        self.submitBtn.disabled = not can_bid
+        if can_bid:
+            self.updateSubmitColor()
+        else:
+            self.submitBtn.set_bg((0.5, 0.5, 0.5, 1))
+        for btn in self._keypadButtons:
+            btn.disabled = not can_bid
+
     def onButtonPress(self, instance):# --------------------- keypad logic -------------------------
+        if instance.disabled:
+            return
         text = instance.text
 
         if text == "C":
@@ -194,6 +217,9 @@ class BidScreen(Screen):
         app = App.get_running_app()
         st = getattr(app, "state", None)
         prev_round_start = None if st is None else getattr(st, "roundStartPerf", None)
+
+        if hasattr(app, "controller") and app.controller.isWalkingPhase():
+            return
 
         bid = self.cents / 100.0
         if hasattr(app, "controller"):
@@ -240,9 +266,25 @@ class BidScreen(Screen):
         self.updateDisplay()
 
     def goToResult(self):
+        """Show results; rebuild ResultScreen so edits to resultScreen.py apply without restarting."""
+        import importlib
+        import resultScreen as result_screen_mod
+
         root = App.get_running_app().root
-        if hasattr(root, "has_screen") and root.has_screen("result"):
-            root.current = "result"
+        if root is None or not hasattr(root, "has_screen"):
+            return
+
+        importlib.reload(result_screen_mod)
+        if root.has_screen("result"):
+            old = root.get_screen("result")
+            if hasattr(old, "cancelDismiss"):
+                old.cancelDismiss()
+            if hasattr(old, "actionGif"):
+                old.actionGif.stop()
+            root.remove_widget(old)
+
+        root.add_widget(result_screen_mod.ResultScreen(name="result"))
+        root.current = "result"
 
     def startTickerIfNeeded(self):
         if self.roundTicker is not None:
@@ -405,7 +447,7 @@ class BidScreen(Screen):
         st = getattr(app, "state", None)
         if st is not None and getattr(st, "pendingInstantRound", False):
             return
-        if app.controller.getSecondsRemaining() is None:
+        if app.controller.getSecondsRemaining() is None and not app.controller.isWalkingPhase():
             return
 
         was_paused = bool(getattr(st, "auctionPaused", False)) if st is not None else False
@@ -413,10 +455,13 @@ class BidScreen(Screen):
             return
         self.updatePauseButton()
         now_paused = bool(getattr(st, "auctionPaused", False)) if st is not None else False
+        secs_left = app.controller.getWalkingSecondsRemaining()
+        if secs_left is None:
+            secs_left = app.controller.getSecondsRemaining()
         pause_detail = {
             "label": "PAUSED EXPERIMENT" if now_paused else "RESUMED EXPERIMENT",
             "message": "Auction timer paused" if now_paused else "Auction timer resumed",
-            "secondsRemaining": app.controller.getSecondsRemaining(),
+            "secondsRemaining": secs_left,
             "toggledFromPaused": was_paused,
         }
         self._emit_event(app, "auction_paused" if now_paused else "auction_resumed", pause_detail)
@@ -430,7 +475,13 @@ class BidScreen(Screen):
         if not hasattr(app, "controller") or st is None:
             self.pauseBtn.text = "PAUSE"
             return
-        if getattr(st, "pendingInstantRound", False) or app.controller.getSecondsRemaining() is None:
+        if getattr(st, "pendingInstantRound", False):
+            self.pauseBtn.text = "PAUSE"
+            return
+        if not (
+            (hasattr(app, "controller") and app.controller.isWalkingPhase())
+            or app.controller.getSecondsRemaining() is not None
+        ):
             self.pauseBtn.text = "PAUSE"
             return
         self.pauseBtn.text = "RESUME" if getattr(st, "auctionPaused", False) else "PAUSE"
@@ -443,30 +494,99 @@ class BidScreen(Screen):
         if st is not None and getattr(st, "pendingInstantRound", False):
             return
 
-        remaining = app.controller.getSecondsRemaining()
+        ctrl = app.controller
+        walking_remaining = ctrl.getWalkingSecondsRemaining()
+        if walking_remaining is not None:
+            self._set_bid_inputs_enabled(False)
+            self.hasActiveRound = True
+            self.timerLabel.opacity = 1
+            mins = int(walking_remaining // 60)
+            secs = int(walking_remaining % 60)
+            if st is not None and getattr(st, "auctionPaused", False):
+                self.timerLabel.text = f"Walk (paused): {mins:02d}:{secs:02d}"
+            else:
+                self.timerLabel.text = f"Walk: {mins:02d}:{secs:02d}"
+            self.updatePauseButton()
+            if walking_remaining <= 0.0 and not (
+                st is not None and getattr(st, "auctionPaused", False)
+            ):
+                self.hasActiveRound = False
+                ctrl.onWalkingPhaseEnded()
+                self.hasActiveRound = True
+                self._sync_bid_screen_phase(app)
+            return
+
+        remaining = ctrl.getSecondsRemaining()
         if remaining is None:
             self.timerLabel.text = "Round: --:--"
             self.timerLabel.opacity = 0
+            self._set_bid_inputs_enabled(False)
             self.updatePauseButton()
             return
 
+        self._set_bid_inputs_enabled(True)
         self.timerLabel.opacity = 1
         mins = int(remaining // 60)
         secs = int(remaining % 60)
         if st is not None and getattr(st, "auctionPaused", False):
-            self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
+            self.timerLabel.text = f"Bid (paused): {mins:02d}:{secs:02d}"
         else:
-            self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
+            self.timerLabel.text = f"Place bid: {mins:02d}:{secs:02d}"
         self.updatePauseButton()
 
-        if remaining <= 0.0 and self.hasActiveRound and not (st is not None and getattr(st, "auctionPaused", False)):
+        if remaining <= 0.0 and self.hasActiveRound and not (
+            st is not None and getattr(st, "auctionPaused", False)
+        ):
             self.hasActiveRound = False
             self.stopTicker()
             self.timerLabel.opacity = 0
+            self._set_bid_inputs_enabled(False)
             result = app.controller.finalizeRound()
             print("Round finalized:", result)
             self.resetKeypad()
             self.goToResult()
+
+    def _sync_bid_screen_phase(self, app):
+        st = getattr(app, "state", None)
+        ctrl = getattr(app, "controller", None)
+        if ctrl is None:
+            return
+
+        if st is not None and getattr(st, "pendingInstantRound", False):
+            self._set_bid_inputs_enabled(True)
+            self.timerLabel.opacity = 0
+            self.updatePauseButton()
+            return
+
+        if ctrl.isWalkingPhase():
+            self.hasActiveRound = True
+            self.timerLabel.opacity = 1
+            self._set_bid_inputs_enabled(False)
+            self.startTickerIfNeeded()
+        elif ctrl.getSecondsRemaining() is not None:
+            started_now = (
+                st is not None
+                and getattr(st, "roundStartPerf", None) is not None
+                and self._lastRoundStartPerf != getattr(st, "roundStartPerf", None)
+            )
+            if started_now:
+                self._emit_event(
+                    app,
+                    "round_started",
+                    _monitor_round_started_payload(st, ctrl),
+                )
+            self._lastRoundStartPerf = (
+                None if st is None else getattr(st, "roundStartPerf", None)
+            )
+            self.hasActiveRound = True
+            self.timerLabel.opacity = 1
+            self._set_bid_inputs_enabled(True)
+            self.startTickerIfNeeded()
+        else:
+            self._set_bid_inputs_enabled(False)
+            self.timerLabel.opacity = 0
+
+        self.updatePauseButton()
 
     def on_pre_enter(self, *_):
         app = App.get_running_app()
@@ -474,29 +594,6 @@ class BidScreen(Screen):
         if hasattr(app, "controller"):
             app.controller.onBidScreenEntered()
 
-        # Hiding timer until a timed round actually begins.
         self.stopTicker()
         self.hasActiveRound = False
-
-        # If BidScreen entry started a timed round (round 2+), robot bids are now locked.
-        st = getattr(app, "state", None)
-        started_now = st is not None and getattr(st, "roundStartPerf", None) is not None and self._lastRoundStartPerf != getattr(st, "roundStartPerf", None)
-        if started_now and not getattr(st, "pendingInstantRound", False):
-            self._emit_event(
-                app,
-                "round_started",
-                _monitor_round_started_payload(st, getattr(app, "controller", None)),
-            )
-        self._lastRoundStartPerf = None if st is None else getattr(st, "roundStartPerf", None)
-
-        remaining = app.controller.getSecondsRemaining() if hasattr(app, "controller") else None
-        if remaining is None:
-            self.timerLabel.text = "Round: --:--"
-            self.timerLabel.opacity = 0
-            self.updatePauseButton()
-            return
-
-        self.hasActiveRound = True
-        self.timerLabel.opacity = 1
-        self.startTickerIfNeeded()
-        self.updatePauseButton()
+        self._sync_bid_screen_phase(app)

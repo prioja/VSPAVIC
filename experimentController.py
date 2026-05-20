@@ -16,9 +16,9 @@ class ExperimentController:
 
     Round flow:
     - First round after START is instant: first SUBMIT finalizes immediately (no timer).
-    - Later rounds are 2 minutes: when BidScreen appears (after Result), the timed round
-      starts immediately (robot bids lock + countdown visible). Multiple SUBMITs
-      overwrite; winner decided at buzzer using last SUBMIT.
+    - Round 2+: walking (roundSeconds) -> 60s rest (bidWindowSeconds bid while stopped,
+      then resultScreenSeconds results while stopped) -> treadmill win/loss -> walking again.
+    - Treadmill outcome is applied when leaving the result screen, not at finalize.
     """
 
     def __init__(self, state, hardware=None, csvLogger=None):
@@ -26,6 +26,8 @@ class ExperimentController:
         self.hardware = hardware
         self.csvLogger = csvLogger if csvLogger is not None else AuctionCsvLogger()
         self.roundSeconds = 120.0
+        self.bidWindowSeconds = 40.0
+        self.resultScreenSeconds = 20.0
 
         # Robo-bidder parameters (from your terminal script)
         self.robo_k = 0.4395073979128712
@@ -40,6 +42,10 @@ class ExperimentController:
         st = self.state
         return {
             "roundSeconds": float(getattr(self, "roundSeconds", 0.0) or 0.0),
+            "bidWindowSeconds": float(getattr(self, "bidWindowSeconds", 0.0) or 0.0),
+            "resultScreenSeconds": float(getattr(self, "resultScreenSeconds", 0.0) or 0.0),
+            "restBreakSeconds": float(self.bidWindowSeconds or 0.0)
+            + float(self.resultScreenSeconds or 0.0),
             "totalRounds": getattr(st, "totalRounds", None),
             "totalAuctionSeconds": getattr(st, "totalAuctionSeconds", None),
             "minAuctionSeconds": getattr(st, "minAuctionSeconds", None),
@@ -56,10 +62,10 @@ class ExperimentController:
 
     def configureSessionTotalTimeSeconds(self, minSeconds, maxSeconds, includeInstantFirstRound=True):
         """
-        Randomly choose a session total bidding time in [minSeconds, maxSeconds] and
-        compute totalRounds by rounding down the number of timed rounds that fit.
+        Randomly choose a session total time and compute how many full cycles fit.
 
-        totalRounds = timedRounds + (1 if includeInstantFirstRound else 0)
+        After the instant first round, each cycle is:
+        walking (roundSeconds) + rest bid (bidWindowSeconds) + results (resultScreenSeconds).
         """
         try:
             mn = float(minSeconds)
@@ -67,15 +73,19 @@ class ExperimentController:
         except Exception:
             return False
         if mx < mn:
-            mn, mx = mx, mn
+            mn, mx = mn
 
         chosen = float(random.uniform(mn, mx))
         self.state.minAuctionSeconds = mn
         self.state.maxAuctionSeconds = mx
         self.state.totalAuctionSeconds = chosen
 
-        rs = float(self.roundSeconds or 0.0)
-        timedRounds = int(chosen // rs) if rs > 0 else 0
+        cycle = (
+            float(self.roundSeconds or 0.0)
+            + float(self.bidWindowSeconds or 0.0)
+            + float(self.resultScreenSeconds or 0.0)
+        )
+        timedRounds = int(chosen // cycle) if cycle > 0 else 0
         base = 1 if includeInstantFirstRound else 0
         self.state.totalRounds = max(base, base + timedRounds)
         return True
@@ -90,12 +100,91 @@ class ExperimentController:
         """Call when participant presses START (before first bid)."""
         self.state.pendingInstantRound = True
 
+    def isWalkingPhase(self):
+        if not getattr(self.state, "inWalkingPhase", False):
+            return False
+        if self.state.walkingEndPerf is None:
+            return False
+        return True
+
+    def _apply_treadmill_outcome(self, humanWon):
+        if self.hardware is None:
+            return
+        try:
+            self.hardware.applyRoundOutcome(humanWon)
+        except Exception as e:
+            print("ExperimentController: treadmill command failed:", e)
+
+    def onReturningToBidAfterResult(self):
+        """
+        Leaving the result screen: apply win/loss to the treadmill, then start walking.
+        """
+        result = self.state.lastResult
+        human_participated = (
+            isinstance(result, dict) and bool(result.get("humanParticipated"))
+        )
+        if human_participated:
+            self._apply_treadmill_outcome(bool(result.get("humanWon")))
+        self.beginWalkingPhase()
+
+    def beginWalkingPhase(self):
+        """Walk until roundSeconds elapses; then rest bid window begins (belts stopped)."""
+        self.startIfNeeded()
+        self.state.pendingInstantRound = False
+        self.state.inWalkingPhase = True
+        self.state.walkingStartPerf = time.perf_counter()
+        self.state.walkingEndPerf = self.state.walkingStartPerf + float(self.roundSeconds)
+        self.state.roundStartPerf = None
+        self.state.roundEndPerf = None
+        self.state.robotBidsLocked = []
+        self.state.lastSubmittedBid = None
+        self.state.auctionPaused = False
+        self.state.pauseRemainingSeconds = None
+
+    def onWalkingPhaseEnded(self):
+        """End walking segment, stop belts, open the 40s rest bid window."""
+        if self.state.walkingStartPerf is not None:
+            self.state.pendingWalkMinutesForRobots = max(
+                0.0,
+                (time.perf_counter() - self.state.walkingStartPerf) / 60.0,
+            )
+        self.state.inWalkingPhase = False
+        self.state.walkingEndPerf = None
+        self.state.walkingStartPerf = None
+        if self.hardware is not None:
+            try:
+                self.hardware.stopBelts()
+            except Exception as e:
+                print("ExperimentController: stop before rest bid failed:", e)
+        self.beginRestBidWindow()
+
+    def beginRestBidWindow(self):
+        """Treadmill stopped; participant has bidWindowSeconds to submit a bid."""
+        self.startIfNeeded()
+        if self.state.pendingInstantRound:
+            return
+
+        if self.hardware is not None:
+            try:
+                self.hardware.stopBelts()
+            except Exception as e:
+                print("ExperimentController: stop for rest bid failed:", e)
+
+        self.state.inWalkingPhase = False
+        self.state.walkingEndPerf = None
+        self.state.walkingStartPerf = None
+        self.state.roundStartPerf = time.perf_counter()
+        self.state.roundStartTimestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
+        self.state.roundEndPerf = self.state.roundStartPerf + float(self.bidWindowSeconds)
+        self.state.robotBidsLocked = self.roboModel.get_bids()
+        self.state.lastSubmittedBid = None
+        self.state.auctionPaused = False
+        self.state.pauseRemainingSeconds = None
+
     def startRoundIfNeeded(self):
         """
         Starts the *current* round (locks robot bids + sets round end time) if not already started.
-
-        Important: this does NOT run just because BidScreen is shown.
-        We'll call it on the first submit of a round.
+        Used for the instant first round on first SUBMIT.
         """
         if self.state.roundStartPerf is not None:
             return
@@ -104,80 +193,78 @@ class ExperimentController:
         if self.state.pendingInstantRound:
             self.state.roundEndPerf = None
         else:
-            self.state.roundEndPerf = self.state.roundStartPerf + self.roundSeconds
+            self.state.roundEndPerf = self.state.roundStartPerf + float(self.bidWindowSeconds)
         self.state.robotBidsLocked = self.roboModel.get_bids()
-
-    def startTimedRoundNow(self):
-        """
-        Begin a timed (120s) round immediately: lock robot bids and start countdown.
-
-        Used when returning to BidScreen after Result (round 2+), so the timer is visible
-        as soon as the participant can bid — not on first SUBMIT.
-        """
-        self.startIfNeeded()
-        if self.state.pendingInstantRound:
-            return
-        if self.state.roundStartPerf is not None:
-            return
-
-        self.state.roundStartPerf = time.perf_counter()
-        self.state.roundStartTimestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
-        self.state.roundEndPerf = self.state.roundStartPerf + self.roundSeconds
-        self.state.robotBidsLocked = self.roboModel.get_bids()
-        self.state.lastSubmittedBid = None
-        self.state.auctionPaused = False
-        self.state.pauseRemainingSeconds = None
 
     def onBidScreenEntered(self):
-        """Call from BidScreen.on_pre_enter to auto-start timed rounds when appropriate."""
-        self.startTimedRoundNow()
+        """Bid screen shown; phase timers are started elsewhere (walking / rest bid)."""
+        return
 
     def submitBidForCurrentRound(self, humanBid):
         """
         Records the *latest* submitted bid for the current round.
         (Multiple submits overwrite; only the last one counts at finalize.)
         """
+        if self.isWalkingPhase():
+            return None
         self.startIfNeeded()
-        # If the round hasn't begun yet (first instant round), start it here.
-        # If BidScreen already started a timed round on entry, do not restart here.
         if self.state.roundStartPerf is None:
             self.startRoundIfNeeded()
 
         self.state.lastSubmittedBid = float(humanBid)
         return self.state.lastSubmittedBid
 
+    def getWalkingSecondsRemaining(self):
+        if not self.isWalkingPhase():
+            return None
+        if self.state.auctionPaused and self.state.pauseRemainingSeconds is not None:
+            return max(0.0, float(self.state.pauseRemainingSeconds))
+        return max(0.0, self.state.walkingEndPerf - time.perf_counter())
+
     def getSecondsRemaining(self):
+        """Seconds left in the rest bid window (not walking)."""
+        if self.isWalkingPhase():
+            return None
         if self.state.roundEndPerf is None:
             return None
         if self.state.auctionPaused and self.state.pauseRemainingSeconds is not None:
             return max(0.0, float(self.state.pauseRemainingSeconds))
         return max(0.0, self.state.roundEndPerf - time.perf_counter())
 
+    def _active_phase_remaining(self):
+        if self.isWalkingPhase():
+            return self.getWalkingSecondsRemaining()
+        return self.getSecondsRemaining()
+
     def pauseAuction(self):
-        """Pause timed round countdown (does nothing if there is no active timer)."""
-        if self.state.roundEndPerf is None:
+        """Pause walking or rest-bid countdown."""
+        remaining = self._active_phase_remaining()
+        if remaining is None or remaining <= 0.0:
             return False
         if self.state.auctionPaused:
             return False
 
-        remaining = max(0.0, self.state.roundEndPerf - time.perf_counter())
-        if remaining <= 0.0:
-            return False
         self.state.pauseRemainingSeconds = float(remaining)
         self.state.auctionPaused = True
-        # Shift end time far into the future so perf_counter-based countdown freezes.
-        self.state.roundEndPerf = time.perf_counter() + 10**9
+        if self.isWalkingPhase():
+            self.state.walkingEndPerf = time.perf_counter() + 10**9
+        elif self.state.roundEndPerf is not None:
+            self.state.roundEndPerf = time.perf_counter() + 10**9
         return True
 
     def resumeAuction(self):
-        """Resume timed round countdown after pauseAuction()."""
+        """Resume walking or rest-bid countdown after pauseAuction()."""
         if not self.state.auctionPaused:
             return False
         if self.state.pauseRemainingSeconds is None:
             self.state.auctionPaused = False
             return False
 
-        self.state.roundEndPerf = time.perf_counter() + float(self.state.pauseRemainingSeconds)
+        end_at = time.perf_counter() + float(self.state.pauseRemainingSeconds)
+        if self.isWalkingPhase():
+            self.state.walkingEndPerf = end_at
+        else:
+            self.state.roundEndPerf = end_at
         self.state.pauseRemainingSeconds = None
         self.state.auctionPaused = False
         return True
@@ -214,7 +301,7 @@ class ExperimentController:
     def finalizeRound(self):
         """
         Finalize one round using the LAST submitted human bid.
-        Returns a plain dict you can show on a Result screen later.
+        Treadmill win/loss is applied later in onReturningToBidAfterResult().
         """
         self.startIfNeeded()
         if self.state.roundStartPerf is None:
@@ -241,9 +328,12 @@ class ExperimentController:
         if humanWon:
             self.state.totalPayout += payout
 
-        walk_dt_minutes = self._round_walk_duration_minutes(
-            self.state.roundStartPerf, roundEndPerf
-        )
+        walk_dt_minutes = float(getattr(self.state, "pendingWalkMinutesForRobots", 0.0) or 0.0)
+        if walk_dt_minutes <= 0.0:
+            walk_dt_minutes = self._round_walk_duration_minutes(
+                self.state.roundStartPerf, roundEndPerf
+            )
+        self.state.pendingWalkMinutesForRobots = 0.0
         self._apply_walk_to_tied_robo_winners(
             winner_indices, humanParticipated, walk_dt_minutes
         )
@@ -265,12 +355,6 @@ class ExperimentController:
             "totalPayout": self.state.totalPayout,
         }
 
-        if self.hardware is not None and humanParticipated:
-            try:
-                self.hardware.applyRoundOutcome(humanWon)
-            except Exception as e:
-                print("ExperimentController: treadmill command failed:", e)
-
         treadmillSpeedMs, treadmillDistanceKm = None, None
         if self.hardware is not None:
             treadmillSpeedMs, treadmillDistanceKm = self.hardware.readMetrics()
@@ -282,7 +366,6 @@ class ExperimentController:
 
         self.state.lastResult = result
         self.state.results.append(result)
-        # Clear round state so the next submit starts a new round.
         self.state.robotBidsLocked = []
         self.state.roundStartPerf = None
         self.state.roundEndPerf = None
@@ -291,5 +374,7 @@ class ExperimentController:
         self.state.pendingInstantRound = False
         self.state.auctionPaused = False
         self.state.pauseRemainingSeconds = None
+        self.state.inWalkingPhase = False
+        self.state.walkingEndPerf = None
+        self.state.walkingStartPerf = None
         return result
-

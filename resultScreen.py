@@ -1,6 +1,6 @@
 """
-Round outcome screen: logo + GIF + optional no-bid message + bid/payout summary.
-Reads `app.state.lastResult` on each visit.
+Round outcome screen: logo + bid summary + GIF.
+Uses the same Label sizing pattern as endScreen.py (size_hint + text_size bind).
 """
 
 from pathlib import Path
@@ -8,62 +8,96 @@ from pathlib import Path
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.uix.screenmanager import Screen
 
 from gifWidget import PillowGifImage
 
+# Same units as endScreen (e.g. GAME OVER title uses 120, total payout uses 110).
+TOTAL_WINNINGS_FONT_SIZE = 80
+DETAIL_SUMMARY_FONT_SIZE = 110
+LOSE_TITLE_FONT_SIZE = 68
+
+
+def _centered_label(**kwargs):
+    lbl = Label(halign="center", valign="middle", bold=True, **kwargs)
+    lbl.bind(size=lbl.setter("text_size"))
+    return lbl
+
 
 class ResultScreen(Screen):
-    # How long the outcome stays visible before returning to bidding.
     dismissAfterSeconds = 20.0
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
         self.dismissEvent = None
+        self._layout = FloatLayout()
+        self.add_widget(self._layout)
 
-        root = BoxLayout(
+        content = BoxLayout(
             orientation="vertical",
-            padding=[40, 200, 40, 40],
+            size_hint=(1, 1),
+            padding=[40, 120, 40, 40],
             spacing=20,
         )
 
-        self.logoImage = Image(source="", size_hint=(1, 0.48), allow_stretch=True, keep_ratio=True)
-        self.actionGif = PillowGifImage(fps=12.0, source="", size_hint=(1, 0.52))
-
-        # Only used when the participant did not bid before the buzzer (see refresh).
-        self.loseTitle = Label(
-            text="No bid was submitted before time expired.",
-            font_size=68,
-            bold=True,
-            size_hint=(1, 0.12),
-            halign="center",
-            valign="middle",
+        self.logoImage = Image(
+            source="",
+            size_hint=(1, 0.24),
+            allow_stretch=True,
+            keep_ratio=True,
         )
-        self.loseTitle.bind(size=self.loseTitle.setter("text_size"))
 
-        self.messageStack = BoxLayout(orientation="vertical", spacing=10, size_hint=(1, 0.35))
+        self.messageStack = BoxLayout(orientation="vertical", size_hint=(1, 0.1))
+        self.loseTitle = _centered_label(
+            text="",
+            font_size=LOSE_TITLE_FONT_SIZE,
+            size_hint=(1, 1),
+        )
         self.messageStack.add_widget(self.loseTitle)
 
-        self.detailLabel = Label(
+        self.detailLabel = _centered_label(
             text="",
-            font_size=54,
-            bold=True,
-            halign="center",
-            valign="middle",
-            size_hint=(1, 0.42),
+            font_size=DETAIL_SUMMARY_FONT_SIZE,
+            size_hint=(1, 0.2),
         )
-        self.detailLabel.bind(size=self.detailLabel.setter("text_size"))
 
-        root.add_widget(self.logoImage)
-        root.add_widget(self.actionGif)
-        root.add_widget(self.messageStack)
-        root.add_widget(self.detailLabel)
-        self.add_widget(root)
+        self.actionGif = PillowGifImage(
+            fps=12.0,
+            source="",
+            size_hint=(1, 0.36),
+        )
+
+        content.add_widget(self.logoImage)
+        content.add_widget(self.messageStack)
+        content.add_widget(self.detailLabel)
+        content.add_widget(self.actionGif)
+
+        self.totalWinningsLabel = Label(
+            text="",
+            font_size=TOTAL_WINNINGS_FONT_SIZE,
+            bold=True,
+            halign="left",
+            valign="top",
+            size_hint=(None, None),
+            pos_hint={"x": 0.03, "top": 0.97},
+        )
+        self.totalWinningsLabel.bind(
+            texture_size=lambda inst, size: setattr(inst, "size", size)
+        )
+
+        self._layout.add_widget(content)
+        self._layout.add_widget(self.totalWinningsLabel)
 
         self.bind(on_pre_enter=self.refresh)
+
+    def _apply_font_sizes(self):
+        self.totalWinningsLabel.font_size = TOTAL_WINNINGS_FONT_SIZE
+        self.detailLabel.font_size = DETAIL_SUMMARY_FONT_SIZE
+        self.loseTitle.font_size = LOSE_TITLE_FONT_SIZE
 
     def on_leave(self, *_):
         self.cancelDismiss()
@@ -74,19 +108,31 @@ class ResultScreen(Screen):
         figsDir = baseDir / "figs"
 
         app = App.get_running_app()
+        ctrl = getattr(app, "controller", None)
+        if ctrl is not None:
+            self.dismissAfterSeconds = float(
+                getattr(ctrl, "resultScreenSeconds", self.dismissAfterSeconds) or 20.0
+            )
+
+        print(
+            "[ResultScreen]",
+            str(Path(__file__).resolve()),
+            f"DETAIL={DETAIL_SUMMARY_FONT_SIZE}",
+            f"TOTAL={TOTAL_WINNINGS_FONT_SIZE}",
+        )
+
+        self._apply_font_sizes()
+
         result = getattr(getattr(app, "state", None), "lastResult", None)
         humanWon = bool(result.get("humanWon")) if isinstance(result, dict) else False
         humanParticipated = bool(result.get("humanParticipated", True)) if isinstance(result, dict) else True
 
         if humanWon:
-            self.logoImage.size_hint_y = 0.48
-            self.actionGif.size_hint_y = 0.52
             self.logoImage.source = str(figsDir / "won_logo.png")
             self.actionGif.opacity = 1
             self.actionGif.start(str(figsDir / "walking.gif"))
-            self.loseTitle.opacity = 0
-            self.messageStack.opacity = 0
             self.messageStack.size_hint_y = 0.001
+            self.messageStack.opacity = 0
         else:
             self.logoImage.source = str(figsDir / "lost_logo.png")
             sittingGif = figsDir / "sitting.gif"
@@ -98,18 +144,12 @@ class ResultScreen(Screen):
                 self.actionGif.opacity = 0
 
             if humanParticipated:
-                self.loseTitle.opacity = 0
-                self.messageStack.opacity = 0
                 self.messageStack.size_hint_y = 0.001
-                self.logoImage.size_hint_y = 0.36
-                self.actionGif.size_hint_y = 0.64
+                self.messageStack.opacity = 0
             else:
-                self.loseTitle.text = "No bid was submitted before time expired."
-                self.loseTitle.opacity = 1
+                self.messageStack.size_hint_y = 0.1
                 self.messageStack.opacity = 1
-                self.messageStack.size_hint_y = 0.12
-                self.logoImage.size_hint_y = 0.32
-                self.actionGif.size_hint_y = 0.56
+                self.loseTitle.text = "No bid was submitted before time expired."
 
         if isinstance(result, dict):
             hb = result.get("humanBid", None)
@@ -117,16 +157,20 @@ class ResultScreen(Screen):
             lowest = float(result.get("lowestBid", 0.0))
             total = float(result.get("totalPayout", 0.0))
             if hb is None:
-                bidLine = "Your bid: (none)"
+                bid_line = "Your bid: (none)"
             else:
-                bidLine = f"Your bid: ${float(hb):.2f}"
+                bid_line = f"Your bid: ${float(hb):.2f}"
+
             self.detailLabel.text = (
-                f"{bidLine}  |  Lowest bid: ${lowest:.2f}  |  "
-                f"Payout: ${payout:.2f}\n\n"
-                f"Total winnings: ${total:.2f}"
+                f"{bid_line}\n"
+                f"Lowest bid: ${lowest:.2f}  |  Payout: ${payout:.2f}"
             )
+            self.totalWinningsLabel.text = f"Total winnings: ${total:.2f}"
         else:
             self.detailLabel.text = ""
+            self.totalWinningsLabel.text = ""
+
+        Clock.schedule_once(lambda *_: self._apply_font_sizes(), 0)
 
         self.scheduleDismiss()
 
@@ -163,4 +207,7 @@ class ResultScreen(Screen):
             return
 
         if hasattr(root, "has_screen") and root.has_screen("bid"):
+            ctrl = getattr(app, "controller", None)
+            if ctrl is not None:
+                ctrl.onReturningToBidAfterResult()
             root.current = "bid"

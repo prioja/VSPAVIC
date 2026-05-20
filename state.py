@@ -31,6 +31,8 @@ class State:
         self.walkingEndPerf = None
         # Robot walk Δt from the last completed walking segment (minutes).
         self.pendingWalkMinutesForRobots = 0.0
+        # Set when win/loss belt commands run (result-screen lead or leaving result).
+        self.treadmillOutcomeApplied = False
 
         # Current round values
         self.humanBid = 0.0

@@ -34,6 +34,7 @@ class ResultScreen(Screen):
         super().__init__(**kwargs)
 
         self.dismissEvent = None
+        self.treadmillLeadEvent = None
         self._layout = FloatLayout()
         self.add_widget(self._layout)
 
@@ -101,6 +102,7 @@ class ResultScreen(Screen):
 
     def on_leave(self, *_):
         self.cancelDismiss()
+        self.cancelTreadmillLead()
         self.actionGif.stop()
 
     def refresh(self, *_):
@@ -173,6 +175,34 @@ class ResultScreen(Screen):
         Clock.schedule_once(lambda *_: self._apply_font_sizes(), 0)
 
         self.scheduleDismiss()
+        self.scheduleTreadmillLead()
+
+    def cancelTreadmillLead(self, *_):
+        if self.treadmillLeadEvent is None:
+            return
+        self.treadmillLeadEvent.cancel()
+        self.treadmillLeadEvent = None
+
+    def scheduleTreadmillLead(self):
+        """Start/stop Bertec during the last N seconds on this screen."""
+        self.cancelTreadmillLead()
+        app = App.get_running_app()
+        ctrl = getattr(app, "controller", None)
+        if ctrl is None:
+            return
+        lead = float(getattr(ctrl, "resultScreenBeltLeadSeconds", 10.0) or 10.0)
+        delay = max(0.0, float(self.dismissAfterSeconds) - lead)
+        self.treadmillLeadEvent = Clock.schedule_once(
+            lambda *_: self._applyTreadmillLead(),
+            delay,
+        )
+
+    def _applyTreadmillLead(self):
+        self.treadmillLeadEvent = None
+        app = App.get_running_app()
+        ctrl = getattr(app, "controller", None)
+        if ctrl is not None:
+            ctrl.applyTreadmillOutcomeForLastResult()
 
     def cancelDismiss(self, *_):
         if self.dismissEvent is None:

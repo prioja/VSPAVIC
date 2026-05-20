@@ -29,6 +29,8 @@ class ExperimentController:
         self.roundSeconds = 120.0
         self.bidWindowSeconds = 40.0
         self.resultScreenSeconds = 20.0
+        # Start/stop Bertec this many seconds before the result screen closes.
+        self.resultScreenBeltLeadSeconds = 10.0
 
         # Robo-bidder parameters (from your terminal script)
         self.robo_k = 0.4395073979128712
@@ -131,27 +133,33 @@ class ExperimentController:
             self.hardware.applyRoundOutcome(humanWon)
         except Exception as e:
             print("ExperimentController: treadmill command failed:", e)
+        self.state.treadmillOutcomeApplied = True
 
-    def onReturningToBidAfterResult(self):
+    def applyTreadmillOutcomeForLastResult(self):
         """
-        Leaving the result screen: apply win/loss to the treadmill, then start walking.
-        Belt commands run off the UI thread so Bertec TCP connect does not stall Kivy.
+        Apply win/loss belt commands once for the current lastResult.
+        Called during the last ~10s on the result screen, or when leaving result.
         """
+        if getattr(self.state, "treadmillOutcomeApplied", False):
+            return
         result = self.state.lastResult
-        human_participated = (
-            isinstance(result, dict) and bool(result.get("humanParticipated"))
-        )
-        human_won = bool(result.get("humanWon")) if isinstance(result, dict) else False
+        if not isinstance(result, dict) or not result.get("humanParticipated"):
+            return
+        human_won = bool(result.get("humanWon"))
 
         def _belt_commands():
-            if human_participated:
-                self._apply_treadmill_outcome(human_won)
+            self._apply_treadmill_outcome(human_won)
 
         if self.hardware is not None and getattr(self.hardware, "enabled", False):
             threading.Thread(target=_belt_commands, daemon=True).start()
-        elif human_participated:
+        else:
             _belt_commands()
 
+    def onReturningToBidAfterResult(self):
+        """
+        Leaving the result screen: ensure belt commands ran, then start walking phase.
+        """
+        self.applyTreadmillOutcomeForLastResult()
         self.beginWalkingPhase()
 
     def beginWalkingPhase(self):
@@ -393,6 +401,7 @@ class ExperimentController:
 
         self.state.lastResult = result
         self.state.results.append(result)
+        self.state.treadmillOutcomeApplied = False
         self.state.robotBidsLocked = []
         self.state.roundStartPerf = None
         self.state.roundEndPerf = None

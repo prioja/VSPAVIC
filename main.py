@@ -42,7 +42,7 @@ class VSPAVicApp(App):
         self.state.totalRounds = None
         # Enable treadmill control by default for the experiment.
         # (Previously required setting VSPA_TREADMILL=1.)
-        self.hardware = TreadmillHardware(enabled=True)
+        self.hardware = TreadmillHardware(enabled=True, walkSpeedMs=1.0)
         self.auctionCsv = AuctionCsvLogger()
         self.controller = ExperimentController(
             self.state,
@@ -90,9 +90,14 @@ class VSPAVicApp(App):
                     cleaned = "".join(ch for ch in raw if (ch.isdigit() or ch in ".-"))
                     try:
                         sp = float(cleaned)
-                        if sp >= 0.0:
+                        if sp > 0.0:
                             self.hardware.walkSpeedMs = sp
                             print("Treadmill walkSpeedMs set to:", sp)
+                        else:
+                            print(
+                                "Treadmill walkSpeedMs unchanged (researcher speed was 0 or invalid):",
+                                self.hardware.walkSpeedMs,
+                            )
                     except Exception:
                         pass
             except Exception as e:

@@ -19,7 +19,7 @@ class TreadmillHardware:
         self,
         viconPcIp=None,
         enabled=None,
-        walkSpeedMs=0,
+        walkSpeedMs=None,
         walkAccelMs2=0.1,
         stopAccelMs2=0.1,
         defaultInclineDeg=0.0,
@@ -29,7 +29,13 @@ class TreadmillHardware:
             enabled = os.environ.get("VSPA_TREADMILL", "").strip().lower() in ("1", "true", "yes")
         self.enabled = bool(enabled)
 
-        self.walkSpeedMs = walkSpeedMs
+        if walkSpeedMs is None:
+            raw = os.environ.get("VSPA_WALK_SPEED_MS", "1.0").strip()
+            try:
+                walkSpeedMs = float(raw)
+            except Exception:
+                walkSpeedMs = 1.0
+        self.walkSpeedMs = max(0.0, float(walkSpeedMs))
         self.walkAccelMs2 = walkAccelMs2
         self.stopAccelMs2 = stopAccelMs2
         self.defaultInclineDeg = defaultInclineDeg
@@ -40,10 +46,28 @@ class TreadmillHardware:
         # Possible values: "walking", "stopped", None (unknown).
         self.lastMotionState = None
         self.walkingSpeedThresholdMs = 0.05
+        self._connect_lock = threading.Lock()
 
     @property
     def isConnected(self):
         return self.bt is not None
+
+    def ensure_connected(self, retries=2):
+        """Connect if needed (safe to call before belt commands)."""
+        if not self.enabled:
+            return False
+        if self.isConnected:
+            return True
+        with self._connect_lock:
+            if self.isConnected:
+                return True
+            for attempt in range(max(1, int(retries))):
+                self.connect()
+                if self.isConnected:
+                    return True
+                if attempt + 1 < retries:
+                    time.sleep(0.5)
+        return self.isConnected
 
     def connect(self):
         """Open socket + reader thread. Call once when the tablet is on the lab network."""
@@ -79,12 +103,12 @@ class TreadmillHardware:
         print("TreadmillHardware: disconnected.")
 
     def setIncline(self, inclineDeg):
-        if not self.isConnected:
+        if not self.ensure_connected():
             return
         self.bt.write_command(speedR=0.0, speedL=0.0, incline=float(inclineDeg))
 
     def stopBelts(self):
-        if not self.isConnected:
+        if not self.ensure_connected():
             return
         print("TreadmillHardware: COMMAND stopBelts()")
         self.bt.write_command(
@@ -96,13 +120,25 @@ class TreadmillHardware:
         self.lastMotionState = "stopped"
 
     def startBelts(self, speedMs=None, accelMs2=None):
-        if not self.isConnected:
-            return
+        if not self.ensure_connected():
+            print("TreadmillHardware: startBelts skipped (not connected to Bertec).")
+            return False
         sp = float(self.walkSpeedMs if speedMs is None else speedMs)
+        if sp <= 0.0:
+            print(
+                "TreadmillHardware: startBelts skipped (walkSpeedMs is 0). "
+                "Set treadmill speed on the researcher config or VSPA_WALK_SPEED_MS."
+            )
+            return False
         ac = float(self.walkAccelMs2 if accelMs2 is None else accelMs2)
         print(f"TreadmillHardware: COMMAND startBelts(speed={sp}, accel={ac})")
-        self.bt.write_command(speedR=sp, speedL=sp, accR=ac, accL=ac)
+        try:
+            self.bt.write_command(speedR=sp, speedL=sp, accR=ac, accL=ac)
+        except Exception as e:
+            print("TreadmillHardware: startBelts write_command failed:", e)
+            return False
         self.lastMotionState = "walking"
+        return True
 
     def isWalking(self):
         """
@@ -120,7 +156,9 @@ class TreadmillHardware:
         """Belts stopped, incline set to default. Runs on a worker thread from the GUI."""
         if not self.enabled:
             return
-        self.connect()
+        if not self.ensure_connected(retries=3):
+            print("TreadmillHardware: prepareSession aborted (no Bertec connection).")
+            return
         if self.isConnected:
             try:
                 self.bt.reset_odometer()
@@ -158,24 +196,30 @@ class TreadmillHardware:
 
     def applyRoundOutcome(self, humanWon):
         """
-        Hook after each auction round.
-        Replace speeds / policy anytime — keep this single call site from `ExperimentController`.
+        Hook after each auction round (after the result screen).
+        Win -> start belts at walkSpeedMs; loss -> stop belts.
         """
-        if not self.enabled or not self.isConnected:
-            if self.enabled and not self.isConnected:
-                print("TreadmillHardware: enabled but not connected (no commands sent).")
+        if not self.enabled:
             return
-        currentlyWalking = self.isWalking()
-        print(f"TreadmillHardware: applyRoundOutcome(humanWon={humanWon}) currentlyWalking={currentlyWalking}")
+        if not self.ensure_connected(retries=3):
+            print(
+                "TreadmillHardware: applyRoundOutcome skipped — not connected to "
+                f"{self.viconPcIp} (last error: {self.lastConnectError})."
+            )
+            return
 
-        # Win: keep walking for another 2 minutes -> if already walking, do nothing.
+        currentlyWalking = self.isWalking()
+        print(
+            f"TreadmillHardware: applyRoundOutcome(humanWon={humanWon}) "
+            f"currentlyWalking={currentlyWalking} walkSpeedMs={self.walkSpeedMs}"
+        )
+
         if humanWon:
             if currentlyWalking:
                 return
             self.startBelts()
             return
 
-        # Loss: stop -> if already stopped, do nothing.
         if not currentlyWalking:
             return
         self.stopBelts()

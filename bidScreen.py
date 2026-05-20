@@ -59,6 +59,7 @@ class BidScreen(Screen):
         self._helpFlashEv = None
         self._helpFlashCount = 0
         self._lastRoundStartPerf = None
+        self._bidInputsEnabled = None
 
         layout1 = BoxLayout(orientation="horizontal", size_hint=(1,0.2))
         # size_hint_x alone can be a very narrow strip before layout settles; min width keeps
@@ -169,14 +170,20 @@ class BidScreen(Screen):
             self.submitBtn.set_bg((0.2, 0.7, 0.2, 1))
 
     def _set_bid_inputs_enabled(self, enabled):
+        """Enable/disable keypad + SUBMIT (e.g. during treadmill walking). Only runs on change."""
         can_bid = bool(enabled)
-        self.submitBtn.disabled = not can_bid
+        if self._bidInputsEnabled == can_bid:
+            return
+        self._bidInputsEnabled = can_bid
+
+        for btn in self._keypadButtons:
+            btn.disabled = not can_bid
+
         if can_bid:
             self.updateDisplay()
         else:
+            self.submitBtn.disabled = True
             self.submitBtn.set_bg((0.5, 0.5, 0.5, 1))
-        for btn in self._keypadButtons:
-            btn.disabled = not can_bid
 
     def onButtonPress(self, instance):# --------------------- keypad logic -------------------------
         if instance.disabled:
@@ -503,9 +510,9 @@ class BidScreen(Screen):
             mins = int(walking_remaining // 60)
             secs = int(walking_remaining % 60)
             if st is not None and getattr(st, "auctionPaused", False):
-                self.timerLabel.text = f"Walk (paused): {mins:02d}:{secs:02d}"
+                self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
             else:
-                self.timerLabel.text = f"Walk: {mins:02d}:{secs:02d}"
+                self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
             self.updatePauseButton()
             if walking_remaining <= 0.0 and not (
                 st is not None and getattr(st, "auctionPaused", False)
@@ -529,9 +536,9 @@ class BidScreen(Screen):
         mins = int(remaining // 60)
         secs = int(remaining % 60)
         if st is not None and getattr(st, "auctionPaused", False):
-            self.timerLabel.text = f"Bid (paused): {mins:02d}:{secs:02d}"
+            self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
         else:
-            self.timerLabel.text = f"Place bid: {mins:02d}:{secs:02d}"
+            self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
         self.updatePauseButton()
 
         if remaining <= 0.0 and self.hasActiveRound and not (
@@ -596,4 +603,5 @@ class BidScreen(Screen):
 
         self.stopTicker()
         self.hasActiveRound = False
+        self._bidInputsEnabled = None
         self._sync_bid_screen_phase(app)

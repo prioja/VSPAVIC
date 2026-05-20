@@ -1,3 +1,4 @@
+import threading
 import time
 from datetime import datetime
 import random
@@ -107,9 +108,25 @@ class ExperimentController:
             return False
         return True
 
+    def _sync_treadmill_speed_from_state(self):
+        """Apply researcher/tablet treadmill speed text to hardware.walkSpeedMs."""
+        if self.hardware is None:
+            return
+        raw = str(getattr(self.state, "treadmillSpeedSetting", "") or "").strip()
+        if not raw:
+            return
+        cleaned = "".join(ch for ch in raw if (ch.isdigit() or ch in ".-"))
+        try:
+            sp = float(cleaned)
+            if sp > 0.0:
+                self.hardware.walkSpeedMs = sp
+        except Exception:
+            pass
+
     def _apply_treadmill_outcome(self, humanWon):
         if self.hardware is None:
             return
+        self._sync_treadmill_speed_from_state()
         try:
             self.hardware.applyRoundOutcome(humanWon)
         except Exception as e:
@@ -118,13 +135,23 @@ class ExperimentController:
     def onReturningToBidAfterResult(self):
         """
         Leaving the result screen: apply win/loss to the treadmill, then start walking.
+        Belt commands run off the UI thread so Bertec TCP connect does not stall Kivy.
         """
         result = self.state.lastResult
         human_participated = (
             isinstance(result, dict) and bool(result.get("humanParticipated"))
         )
-        if human_participated:
-            self._apply_treadmill_outcome(bool(result.get("humanWon")))
+        human_won = bool(result.get("humanWon")) if isinstance(result, dict) else False
+
+        def _belt_commands():
+            if human_participated:
+                self._apply_treadmill_outcome(human_won)
+
+        if self.hardware is not None and getattr(self.hardware, "enabled", False):
+            threading.Thread(target=_belt_commands, daemon=True).start()
+        elif human_participated:
+            _belt_commands()
+
         self.beginWalkingPhase()
 
     def beginWalkingPhase(self):

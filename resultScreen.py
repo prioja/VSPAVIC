@@ -16,8 +16,8 @@ from kivy.uix.screenmanager import Screen
 from gifWidget import PillowGifImage
 
 # Same units as endScreen (e.g. GAME OVER title uses 120, total payout uses 110).
-TOTAL_WINNINGS_FONT_SIZE = 80
-DETAIL_SUMMARY_FONT_SIZE = 110
+TOTAL_WINNINGS_FONT_SIZE = 100
+DETAIL_SUMMARY_FONT_SIZE = 125
 LOSE_TITLE_FONT_SIZE = 68
 
 
@@ -47,7 +47,8 @@ class ResultScreen(Screen):
 
         self.logoImage = Image(
             source="",
-            size_hint=(1, 0.24),
+            size_hint=(1, 0.15),
+            pos_hint={"center_y": 1},
             allow_stretch=True,
             keep_ratio=True,
         )
@@ -159,15 +160,15 @@ class ResultScreen(Screen):
             lowest = float(result.get("lowestBid", 0.0))
             total = float(result.get("totalPayout", 0.0))
             if hb is None:
-                bid_line = "Your bid: (none)"
+                bid_line = "Your bid: N/A"
             else:
-                bid_line = f"Your bid: ${float(hb):.2f}"
+                bid_line = f"Your Bid: ${float(hb):.2f}"
 
             self.detailLabel.text = (
                 f"{bid_line}\n"
-                f"Lowest bid: ${lowest:.2f}  |  Payout: ${payout:.2f}"
+                f"\n Low Bid: ${lowest:.2f}                    Payout: ${payout:.2f}"
             )
-            self.totalWinningsLabel.text = f"Total winnings: ${total:.2f}"
+            self.totalWinningsLabel.text = f"Total Payout:\n${total:.2f}"
         else:
             self.detailLabel.text = ""
             self.totalWinningsLabel.text = ""

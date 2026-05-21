@@ -8,7 +8,7 @@ PRESS_BG = (0.102, 0.710, 0.929, 1)
 
 
 class RoundedButton(Button):
-    """Rounded fill; swaps to ``press_bg`` while pressed (same idea as default grid buttons)."""
+    """Rounded fill; solid background color while pressed (no blink/flash animation)."""
 
     def __init__(self, bg=(0.5, 0.5, 0.5, 1), radius=15, press_bg=PRESS_BG, **kwargs):
         super().__init__(**kwargs)
@@ -58,7 +58,8 @@ class RoundedButton(Button):
 
     def _on_disabled(self, *_args):
         if self.disabled:
-            self._pressed = False
+            self._set_pressed(False)
+        else:
             self.color_instr.rgba = self._base_bg
 
     def on_touch_down(self, touch):

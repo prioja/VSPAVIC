@@ -28,11 +28,20 @@ from researchLink import sendMonitorEvent
 from roundedButton import RoundedButton
 
 
+def _current_round_number(st):
+    """
+    1-based round # for the on-screen timer.
+    Instant first bid has no timer; when the timer first appears it is Round 1
+    (one completed result -> Round 1, not Round 2).
+    """
+    if st is None:
+        return 1
+    return max(1, len(getattr(st, "results", []) or []))
+
+
 def _monitor_round_started_payload(st, controller=None):
-    """1-based round # for researcher monitor (len(completed) + 1 for the round now starting)."""
-    n = 1
-    if st is not None:
-        n = len(getattr(st, "results", []) or []) + 1
+    """1-based round # for researcher monitor (matches on-screen timer)."""
+    n = _current_round_number(st)
     out = {
         "label": f"ROUND {n} STARTED",
         "roundNumber": n,
@@ -67,7 +76,7 @@ class BidScreen(Screen):
         _side_btn_kw = dict(
             size_hint=(0.12, 0.4),
             size_hint_min_x=dp(108),
-            font_size=60,
+            font_size=120,
             bold=True,
             disabled=False,
             background_normal="",
@@ -80,14 +89,37 @@ class BidScreen(Screen):
 
         # FloatLayout so pos_hint actually moves widgets (BoxLayout ignores it).
         layout2 = FloatLayout(size_hint=(1, 0.8))
-        self.timerLabel = PassthroughLabel(
-            text="Round: --:--",
-            font_size=90,
+        self.timerStack = BoxLayout(
+            orientation="vertical",
+            size_hint=(None, None),
+            spacing=6,
+            pos_hint={"x": 0.01, "y": 0.72},
+        )
+        self.roundNumberLabel = PassthroughLabel(
+            text="Round --:",
+            font_size=120,
             bold=True,
             size_hint=(None, None),
-            pos_hint={"x": 0.1, "y": 0.02},
         )
-        self.timerLabel.opacity = 0
+        self.timerClockLabel = PassthroughLabel(
+            text="--:--",
+            font_size=110,
+            bold=True,
+            size_hint=(None, None),
+        )
+        self.roundNumberLabel.halign = "left"
+        self.roundNumberLabel.valign = "middle"
+        self.timerClockLabel.halign = "left"
+        self.timerClockLabel.valign = "middle"
+        self.roundNumberLabel.bind(
+            texture_size=lambda inst, ts: setattr(inst, "size", ts)
+        )
+        self.timerClockLabel.bind(
+            texture_size=lambda inst, ts: setattr(inst, "size", ts)
+        )
+        self.timerStack.add_widget(self.roundNumberLabel)
+        self.timerStack.add_widget(self.timerClockLabel)
+        self.timerStack.opacity = 0
         self.display = Label(
             text=self.formatMoney(),
             font_size=330,
@@ -109,7 +141,7 @@ class BidScreen(Screen):
         ]
 
         for b in buttons:
-            btn = Button(text=b, font_size=90, bold=True)
+            btn = Button(text=b, font_size=100, bold=True)
             btn.bind(on_press=self.onButtonPress)
             self._keypadButtons.append(btn)
             self.keypadGrid.add_widget(btn)
@@ -120,7 +152,7 @@ class BidScreen(Screen):
             size_hint=(0.22, 0.08),
             size_hint_min=(dp(160), dp(52)),
             pos_hint={"center_x": 0.5, "y": 0.03},
-            font_size=60,
+            font_size=80,
             bold=True,
             disabled=True,
             color=(1, 1, 1, 1),
@@ -144,7 +176,7 @@ class BidScreen(Screen):
 
         self.overlay = FloatLayout()
         self.overlay.add_widget(body)
-        self.overlay.add_widget(self.timerLabel)
+        self.overlay.add_widget(self.timerStack)
 
         self._buildHelpOverlay()
         # helpRoot is attached only while HELP is open (see showHelp/hideHelp) so a
@@ -169,12 +201,34 @@ class BidScreen(Screen):
             self.submitBtn.disabled = False
             self.submitBtn.set_bg((0.2, 0.7, 0.2, 1))
 
+    def _set_timer_display(self, round_num=None, mins=0, secs=0, paused=False, visible=False):
+        if visible:
+            self.timerStack.opacity = 1
+            if round_num is None:
+                self.roundNumberLabel.text = "Round --:"
+                self.timerClockLabel.text = "--:--"
+            else:
+                if paused:
+                    self.roundNumberLabel.text = f"Round {round_num}: (paused)"
+                else:
+                    self.roundNumberLabel.text = f"Round {round_num}:"
+                self.timerClockLabel.text = f"{int(mins):02d}:{int(secs):02d}"
+        else:
+            self.timerStack.opacity = 0
+
+    def _set_bid_ui_live(self, live):
+        """Dim bid amount + number pad only; rounded buttons keep solid press colors."""
+        self.display.opacity = 1.0 if live else 0.4
+        self.keypadGrid.opacity = 1.0 if live else 0.4
+
     def _set_bid_inputs_enabled(self, enabled):
         """Enable/disable keypad + SUBMIT (e.g. during treadmill walking). Only runs on change."""
         can_bid = bool(enabled)
         if self._bidInputsEnabled == can_bid:
             return
         self._bidInputsEnabled = can_bid
+
+        self._set_bid_ui_live(can_bid)
 
         for btn in self._keypadButtons:
             btn.disabled = not can_bid
@@ -356,16 +410,16 @@ class BidScreen(Screen):
         )
 
         title = Label(
-            text="ALERT",
-            font_size=44,
+            text="\nALERT",
+            font_size=100,
             bold=True,
             color=(0.1, 0.1, 0.1, 1),
             size_hint=(1, None),
             height=56,
         )
         body = Label(
-            text="A researcher has been notified.\n\nPlease wait for assistance.\n\nTap outside this box or press OK to close.",
-            font_size=30,
+            text="\nA researcher has been notified.\nPlease wait for assistance.\n\nTap outside this box or press OK to close.",
+            font_size=80,
             color=(0.15, 0.15, 0.15, 1),
             valign="middle",
             halign="center",
@@ -373,7 +427,7 @@ class BidScreen(Screen):
         )
         body.bind(size=lambda inst, s: setattr(inst, "text_size", (s[0] - 10, s[1])))
 
-        ok = RoundedButton(text="OK", font_size=44, bold=True, bg=(0.2, 0.45, 0.85, 1), size_hint=(1, 0.22))
+        ok = RoundedButton(text="OK", font_size=80, bold=True, bg=(0.2, 0.45, 0.85, 1), size_hint=(1, 0.22))
         ok.bind(on_press=lambda *_: self.hideHelp())
 
         self.helpCard.add_widget(title)
@@ -502,17 +556,19 @@ class BidScreen(Screen):
             return
 
         ctrl = app.controller
+        rn = _current_round_number(st)
         walking_remaining = ctrl.getWalkingSecondsRemaining()
         if walking_remaining is not None:
             self._set_bid_inputs_enabled(False)
             self.hasActiveRound = True
-            self.timerLabel.opacity = 1
-            mins = int(walking_remaining // 60)
-            secs = int(walking_remaining % 60)
-            if st is not None and getattr(st, "auctionPaused", False):
-                self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
-            else:
-                self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
+            paused = bool(st is not None and getattr(st, "auctionPaused", False))
+            self._set_timer_display(
+                rn,
+                int(walking_remaining // 60),
+                int(walking_remaining % 60),
+                paused=paused,
+                visible=True,
+            )
             self.updatePauseButton()
             if walking_remaining <= 0.0 and not (
                 st is not None and getattr(st, "auctionPaused", False)
@@ -525,20 +581,20 @@ class BidScreen(Screen):
 
         remaining = ctrl.getSecondsRemaining()
         if remaining is None:
-            self.timerLabel.text = "Round: --:--"
-            self.timerLabel.opacity = 0
+            self._set_timer_display(visible=False)
             self._set_bid_inputs_enabled(False)
             self.updatePauseButton()
             return
 
         self._set_bid_inputs_enabled(True)
-        self.timerLabel.opacity = 1
-        mins = int(remaining // 60)
-        secs = int(remaining % 60)
-        if st is not None and getattr(st, "auctionPaused", False):
-            self.timerLabel.text = f"Round (paused): {mins:02d}:{secs:02d}"
-        else:
-            self.timerLabel.text = f"Round: {mins:02d}:{secs:02d}"
+        paused = bool(st is not None and getattr(st, "auctionPaused", False))
+        self._set_timer_display(
+            rn,
+            int(remaining // 60),
+            int(remaining % 60),
+            paused=paused,
+            visible=True,
+        )
         self.updatePauseButton()
 
         if remaining <= 0.0 and self.hasActiveRound and not (
@@ -546,7 +602,7 @@ class BidScreen(Screen):
         ):
             self.hasActiveRound = False
             self.stopTicker()
-            self.timerLabel.opacity = 0
+            self._set_timer_display(visible=False)
             self._set_bid_inputs_enabled(False)
             result = app.controller.finalizeRound()
             print("Round finalized:", result)
@@ -561,13 +617,12 @@ class BidScreen(Screen):
 
         if st is not None and getattr(st, "pendingInstantRound", False):
             self._set_bid_inputs_enabled(True)
-            self.timerLabel.opacity = 0
+            self._set_timer_display(visible=False)
             self.updatePauseButton()
             return
 
         if ctrl.isWalkingPhase():
             self.hasActiveRound = True
-            self.timerLabel.opacity = 1
             self._set_bid_inputs_enabled(False)
             self.startTickerIfNeeded()
         elif ctrl.getSecondsRemaining() is not None:
@@ -586,12 +641,11 @@ class BidScreen(Screen):
                 None if st is None else getattr(st, "roundStartPerf", None)
             )
             self.hasActiveRound = True
-            self.timerLabel.opacity = 1
             self._set_bid_inputs_enabled(True)
             self.startTickerIfNeeded()
         else:
             self._set_bid_inputs_enabled(False)
-            self.timerLabel.opacity = 0
+            self._set_timer_display(visible=False)
 
         self.updatePauseButton()
 

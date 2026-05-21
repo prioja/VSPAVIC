@@ -15,15 +15,11 @@ Short aliases are also accepted:
   export HOST=192.168.x.x
   export PORT=5999
 
-Researcher machine (send treadmill speed to tablet — tablet app must be running first):
+Researcher machine (send config to tablet):
 
   python3 -m researchLink --send-config --tablet <TABLET_IP> --tablet-port 6000
 
-  Or send speed then listen for auction events in one command:
-
-  python3 -m researchLink --listen --tablet <TABLET_IP> --treadmill-speed 1.0
-
-  Prompts for speed/stiffness when --send-config is used without --treadmill-speed.
+  Prompts: treadmill speed, condition; preferred stiffness only if VS*.
 """
 
 import argparse
@@ -240,49 +236,13 @@ def startConfigListener(onPayload, port=6000, host="0.0.0.0"):
     threading.Thread(target=_run, daemon=True).start()
 
 
-def runSendConfig(tablet, tablet_port=6000, treadmill_speed=None, condition="", preferred_stiffness=None):
-    """Push treadmill speed (and optional VS stiffness) to the tablet config listener."""
-    if not (tablet or "").strip():
-        raise SystemExit("--tablet is required to send treadmill config.")
-
-    speed = (treadmill_speed or "").strip()
-    if not speed:
-        speed = input("Treadmill Speed (m/s): ").strip()
-
-    cond = (condition or "").strip().upper()
-    if not cond and preferred_stiffness is None:
-        cond = input("Trial Condition (TH/PF/VS) [optional]: ").strip().upper()
-
-    stiff = preferred_stiffness
-    if stiff is None:
-        stiff = ""
-        if cond.startswith("VS"):
-            stiff = input("Preferred Stiffness (N/mm): ").strip()
-    else:
-        stiff = str(stiff).strip()
-
-    sendResearcherConfig(
-        tablet.strip(),
-        int(tablet_port),
-        treadmillSpeed=speed,
-        preferredStiffness=stiff,
-    )
-    print(
-        f"researchLink: sent researcher_config to {tablet.strip()}:{int(tablet_port)} "
-        f"(treadmill speed={speed!r})."
-    )
-
-
 def listenLoop(port, raw=False, showIp=False):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", int(port)))
     srv.listen(5)
     print(f"researchLink: listening on 0.0.0.0:{port} (Ctrl+C to stop)")
-    print(
-        "researchLink: tablet events appear here when the app sets "
-        "VSPA_MONITOR_HOST to this machine."
-    )
+    print(f"researchLink: using script {__file__!r} — restart this process after edits.")
     try:
         while True:
             conn, addr = srv.accept()
@@ -324,54 +284,40 @@ def main():
         action="store_true",
         help="Prompt and send treadmill / stiffness (VS) to tablet.",
     )
-    p.add_argument("--tablet", type=str, default="", help="Tablet IP for config send (port 6000).")
-    p.add_argument("--tablet-port", type=int, default=6000, help="Tablet config port (default 6000).")
-    p.add_argument(
-        "--treadmill-speed",
-        type=str,
-        default="",
-        help="Treadmill speed in m/s (with --send-config or --listen --tablet).",
-    )
-    p.add_argument(
-        "--preferred-stiffness",
-        type=str,
-        default=None,
-        help="Preferred stiffness N/mm for VS trials (optional).",
-    )
+    p.add_argument("--tablet", type=str, default="", help="Tablet IP/hostname for --send-config.")
+    p.add_argument("--tablet-port", type=int, default=6000, help="Tablet port for --send-config (default 6000).")
     p.add_argument(
         "--condition",
         type=str,
         default="",
-        help="Trial condition TH/PF/VS; if VS and stiffness omitted, prompts.",
+        help="Optional condition code (VS/PF/TH). If VS, will prompt for Preferred Stiffness.",
     )
     args = p.parse_args()
-
-    should_send = bool(args.send_config) or bool((args.treadmill_speed or "").strip())
-    if args.listen and args.tablet and not should_send:
-        print(
-            "researchLink: tip — add --treadmill-speed 1.0 or --send-config to push "
-            "speed to the tablet before listening."
-        )
-
-    if should_send:
-        runSendConfig(
-            args.tablet,
-            tablet_port=args.tablet_port,
-            treadmill_speed=args.treadmill_speed or None,
-            condition=args.condition,
-            preferred_stiffness=args.preferred_stiffness,
-        )
 
     if args.listen:
         listenLoop(args.port, raw=args.raw, showIp=args.show_ip)
         return
 
-    if args.send_config or should_send:
-        if not args.tablet and should_send:
-            raise SystemExit("--tablet is required when sending treadmill config.")
+    if args.send_config:
+        if not args.tablet:
+            raise SystemExit("--tablet is required with --send-config")
+
+        treadmillSpeed = input("Treadmill Speed (m/s): ").strip()
+        cond = (args.condition or input("Trial Condition (TH/PF/VS) [optional]: ").strip()).upper()
+        preferredStiffness = ""
+        if cond.startswith("VS"):
+            preferredStiffness = input("Preferred Stiffness (N/mm: ").strip()
+
+        sendResearcherConfig(
+            args.tablet,
+            args.tablet_port,
+            treadmillSpeed=treadmillSpeed,
+            preferredStiffness=preferredStiffness,
+        )
+        print("Sent researcher_config.")
         return
 
-    print("Nothing to do. Use --listen and/or --send-config (with --tablet).")
+    print("Nothing to do. Use --listen or --send-config.")
 
 
 if __name__ == "__main__":

@@ -36,31 +36,69 @@ SESSION_START_RESEARCHER_REMINDERS = (
 )
 
 
-def sendMonitorEvent(event, payload=None, host=None, port=None):
-    host = host or os.environ.get("VSPA_MONITOR_HOST", "").strip() or os.environ.get("HOST", "").strip()
-    if not host:
-        return False
+_monitor_no_host_warned = False
+
+
+def get_monitor_target():
+    """
+    Tablet -> researcher monitor address from env (read when the app starts).
+    Prefer VSPA_MONITOR_* ; HOST/PORT aliases still work (no spaces around =).
+    """
+    host = (
+        os.environ.get("VSPA_MONITOR_HOST", "").strip()
+        or os.environ.get("HOST", "").strip()
+    )
+    port_raw = (
+        os.environ.get("VSPA_MONITOR_PORT", "").strip()
+        or os.environ.get("PORT", "").strip()
+        or "5999"
+    )
     try:
-        port = int(
-            port
-            or os.environ.get("VSPA_MONITOR_PORT", "").strip()
-            or os.environ.get("PORT", "5999").strip()
-        )
+        port = int(port_raw)
     except ValueError:
         port = 5999
+    return host, port
+
+
+def sendMonitorEvent(event, payload=None, host=None, port=None):
+    global _monitor_no_host_warned
+    if host:
+        target_host = host.strip()
+    else:
+        target_host, _ = get_monitor_target()
+    if not target_host:
+        if not _monitor_no_host_warned:
+            _monitor_no_host_warned = True
+            print(
+                "researchLink: monitor disabled — set VSPA_MONITOR_HOST=<researcher IP> "
+                "(or HOST=<researcher IP>) in the same shell before python3 main.py; "
+                "no spaces around =",
+                flush=True,
+            )
+        return False
+    try:
+        if port is not None:
+            target_port = int(port)
+        else:
+            _, target_port = get_monitor_target()
+    except ValueError:
+        target_port = 5999
 
     msg = {"ts": time.time(), "event": event, "payload": payload or {}}
     line = (json.dumps(msg, separators=(",", ":")) + "\n").encode("utf-8")
 
     def _send():
         try:
-            s = socket.create_connection((host, port), timeout=1.0)
+            s = socket.create_connection((target_host, target_port), timeout=2.0)
             try:
                 s.sendall(line)
             finally:
                 s.close()
         except Exception as e:
-            print("researchLink: send failed:", e)
+            print(
+                f"researchLink: send failed ({target_host}:{target_port}): {e}",
+                flush=True,
+            )
 
     threading.Thread(target=_send, daemon=True).start()
     return True

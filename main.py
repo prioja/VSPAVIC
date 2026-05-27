@@ -15,7 +15,7 @@ from startScreen import StartScreen
 from bidScreen import BidScreen
 from resultScreen import ResultScreen
 from endScreen import EndScreen
-from researchLink import startConfigListener
+from researchLink import get_monitor_target, startConfigListener
 
 class VSPAVicApp(App):
     
@@ -37,6 +37,23 @@ class VSPAVicApp(App):
             pass
 
         self.state = State()
+
+        mon_host, mon_port = get_monitor_target()
+        if mon_host:
+            print(
+                f"Research monitor: sending events to {mon_host}:{mon_port}",
+                flush=True,
+            )
+        else:
+            print(
+                "Research monitor: not configured — on the tablet run e.g.\n"
+                "  export VSPA_MONITOR_HOST=<researcher_laptop_IP>\n"
+                "  export VSPA_MONITOR_PORT=5999\n"
+                "  python3 main.py\n"
+                "(HOST/PORT work too; no spaces around =)",
+                flush=True,
+            )
+
         # totalRounds is computed from the randomized session duration bounds below.
         # (No default fixed number of rounds.)
         self.state.totalRounds = None

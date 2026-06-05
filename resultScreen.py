@@ -15,8 +15,6 @@ from kivy.uix.screenmanager import Screen
 
 from gifWidget import PillowGifImage
 
-# Same units as endScreen (e.g. GAME OVER title uses 120, total payout uses 110).
-TOTAL_WINNINGS_FONT_SIZE = 100
 DETAIL_SUMMARY_FONT_SIZE = 125
 LOSE_TITLE_FONT_SIZE = 68
 
@@ -78,26 +76,11 @@ class ResultScreen(Screen):
         content.add_widget(self.detailLabel)
         content.add_widget(self.actionGif)
 
-        self.totalWinningsLabel = Label(
-            text="",
-            font_size=TOTAL_WINNINGS_FONT_SIZE,
-            bold=True,
-            halign="left",
-            valign="top",
-            size_hint=(None, None),
-            pos_hint={"x": 0.03, "top": 0.97},
-        )
-        self.totalWinningsLabel.bind(
-            texture_size=lambda inst, size: setattr(inst, "size", size)
-        )
-
         self._layout.add_widget(content)
-        self._layout.add_widget(self.totalWinningsLabel)
 
         self.bind(on_pre_enter=self.refresh)
 
     def _apply_font_sizes(self):
-        self.totalWinningsLabel.font_size = TOTAL_WINNINGS_FONT_SIZE
         self.detailLabel.font_size = DETAIL_SUMMARY_FONT_SIZE
         self.loseTitle.font_size = LOSE_TITLE_FONT_SIZE
 
@@ -121,7 +104,6 @@ class ResultScreen(Screen):
             "[ResultScreen]",
             str(Path(__file__).resolve()),
             f"DETAIL={DETAIL_SUMMARY_FONT_SIZE}",
-            f"TOTAL={TOTAL_WINNINGS_FONT_SIZE}",
         )
 
         self._apply_font_sizes()
@@ -155,23 +137,13 @@ class ResultScreen(Screen):
                 self.loseTitle.text = "No bid was submitted before time expired."
 
         if isinstance(result, dict):
-            hb = result.get("humanBid", None)
-            payout = float(result.get("payout", 0.0))
-            lowest = float(result.get("lowestBid", 0.0))
-            total = float(result.get("totalPayout", 0.0))
-            if hb is None:
-                bid_line = "Your bid: N/A"
+            lowest = result.get("lowestBid", None)
+            if lowest is None:
+                self.detailLabel.text = "Winning Bid: N/A"
             else:
-                bid_line = f"Your Bid: ${float(hb):.2f}"
-
-            self.detailLabel.text = (
-                f"{bid_line}\n"
-                f"\n Low Bid: ${lowest:.2f}                    Payout: ${payout:.2f}"
-            )
-            self.totalWinningsLabel.text = f"Total Payout:\n${total:.2f}"
+                self.detailLabel.text = f"Winning Bid: ${float(lowest):.2f}"
         else:
             self.detailLabel.text = ""
-            self.totalWinningsLabel.text = ""
 
         Clock.schedule_once(lambda *_: self._apply_font_sizes(), 0)
 

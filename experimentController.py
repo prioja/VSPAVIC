@@ -27,7 +27,7 @@ class ExperimentController:
         self.hardware = hardware
         self.csvLogger = csvLogger if csvLogger is not None else AuctionCsvLogger()
         self.roundSeconds = 120.0
-        self.bidWindowSeconds = 40.0
+        self.bidWindowSeconds = 60.0
         self.resultScreenSeconds = 20.0
         # Start/stop Bertec this many seconds before the result screen closes.
         self.resultScreenBeltLeadSeconds = 10.0
@@ -177,7 +177,7 @@ class ExperimentController:
         self.state.pauseRemainingSeconds = None
 
     def onWalkingPhaseEnded(self):
-        """End walking segment, stop belts, open the 40s rest bid window."""
+        """End walking segment, stop belts, open the 60s rest bid window."""
         if self.state.walkingStartPerf is not None:
             self.state.pendingWalkMinutesForRobots = max(
                 0.0,

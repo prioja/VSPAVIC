@@ -6,6 +6,7 @@ Kivy==2.3.1
 
 # Robobidders / BertecMan
 numpy==2.4.4
+scipy==1.15.2
 
 # Pillow GIF widget (gifWidget)
 pillow==10.4.0

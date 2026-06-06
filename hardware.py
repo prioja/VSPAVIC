@@ -22,7 +22,7 @@ class TreadmillHardware:
         walkSpeedMs=None,
         walkAccelMs2=0.1,
         stopAccelMs2=0.1,
-        defaultInclineDeg=0.0,
+        defaultInclineDeg=7.0,  ###### update if needed
     ):
         self.viconPcIp = viconPcIp or os.environ.get("VSPA_BERTEC_IP", "141.212.77.30")
         if enabled is None:

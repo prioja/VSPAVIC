@@ -1,0 +1,16 @@
+subjID:,test1
+Condition:,TH ~ Take Home
+Trial #:,1
+Date:,"=""06-05-2026"""
+Experiment Time:,"=""10:14:26 PM"""
+Treadmill Speed:,
+Preferred Stiffness (N/mm):,N/A
+
+Round #,Start Time,End Time,Subject Bid,Human Won,Robo 1 Bid,Robo 2 Bid,Lowest Bid,Vickrey Price,Total Winnings,Distance
+,,,$,,$,$,$,$,$,m
+0,"=""10:14:35 PM""","=""10:14:35 PM""",0.01,True,0.44,0.41,0.01,0.41,0.41,
+1,"=""10:16:57 PM""","=""10:17:57 PM""",0.1,True,0.44,0.41,0.1,0.41,0.82,
+2,"=""10:20:18 PM""","=""10:21:18 PM""",0.43,False,0.44,0.41,0.41,0.43,0.82,
+3,"=""10:23:39 PM""","=""10:24:39 PM""",1.0,False,0.44,0.46,0.44,0.46,0.82,
+4,"=""10:27:00 PM""","=""10:28:00 PM""",1.0,False,0.51,0.46,0.46,0.51,0.82,
+5,"=""10:30:22 PM""","=""10:31:22 PM""",0.7,False,0.51,0.52,0.51,0.52,0.82,

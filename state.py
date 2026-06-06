@@ -29,8 +29,6 @@ class State:
         self.inWalkingPhase = False
         self.walkingStartPerf = None
         self.walkingEndPerf = None
-        # Robot walk Δt from the last completed walking segment (minutes).
-        self.pendingWalkMinutesForRobots = 0.0
         # Set when win/loss belt commands run (result-screen lead or leaving result).
         self.treadmillOutcomeApplied = False
 

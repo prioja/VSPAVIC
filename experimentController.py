@@ -179,10 +179,11 @@ class ExperimentController:
     def onWalkingPhaseEnded(self):
         """End walking segment, stop belts, open the 60s rest bid window."""
         if self.state.walkingStartPerf is not None:
-            self.state.pendingWalkMinutesForRobots = max(
+            walk_minutes = max(
                 0.0,
                 (time.perf_counter() - self.state.walkingStartPerf) / 60.0,
             )
+            self.roboModel.bankWalkMinutesForAll(walk_minutes)
         self.state.inWalkingPhase = False
         self.state.walkingEndPerf = None
         self.state.walkingStartPerf = None
@@ -309,29 +310,20 @@ class ExperimentController:
             return self.resumeAuction()
         return self.pauseAuction()
 
-    def _round_walk_duration_minutes(self, round_start_perf, round_end_perf):
-        """Wall-clock minutes for this round (used as Δt on the robo walk curve)."""
-        if round_start_perf is None:
-            return 0.0
-        end = round_end_perf if round_end_perf is not None else time.perf_counter()
-        return max(0.0, (end - round_start_perf) / 60.0)
-
     def _lowest_bid_winner_indices(self, current_bids):
         if not current_bids:
             return []
         lowest = min(current_bids)
         return [i for i, b in enumerate(current_bids) if b == lowest]
 
-    def _apply_walk_to_tied_robo_winners(self, winner_indices, human_participated, walk_dt_minutes):
-        """Every robot tied at the lowest bid walks (2-way or 3-way ties included)."""
-        if walk_dt_minutes <= 0.0:
-            return
+    def _apply_walk_to_tied_robo_winners(self, winner_indices, human_participated):
+        """Winning robots credit all walk time banked since their last win."""
         for idx in winner_indices:
             if human_participated and idx == 0:
                 continue
             robo_idx = idx - 1 if human_participated else idx
             if 0 <= robo_idx < len(self.roboModel.robobidderlist):
-                self.roboModel.robobidderlist[robo_idx].walk_for_duration(walk_dt_minutes)
+                self.roboModel.robobidderlist[robo_idx].applyPendingWalk()
 
     def finalizeRound(self):
         """
@@ -363,15 +355,7 @@ class ExperimentController:
         if humanWon:
             self.state.totalPayout += payout
 
-        walk_dt_minutes = float(getattr(self.state, "pendingWalkMinutesForRobots", 0.0) or 0.0)
-        if walk_dt_minutes <= 0.0:
-            walk_dt_minutes = self._round_walk_duration_minutes(
-                self.state.roundStartPerf, roundEndPerf
-            )
-        self.state.pendingWalkMinutesForRobots = 0.0
-        self._apply_walk_to_tied_robo_winners(
-            winner_indices, humanParticipated, walk_dt_minutes
-        )
+        self._apply_walk_to_tied_robo_winners(winner_indices, humanParticipated)
 
         result = {
             "timestamp": roundEndTimestamp,

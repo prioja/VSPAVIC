@@ -1,11 +1,7 @@
 import numpy as np
-from scipy.stats import truncnorm
 
-# Truncated-normal multiplier on curve value after walking (0.85–1.15, mean 1.0).
-mulMu, mulSigma = 1.0, 0.05
-mulLo, mulHi = 0.85, 1.15
-mulA = (mulLo - mulMu) / mulSigma
-mulB = (mulHi - mulMu) / mulSigma
+# One-sided uniform multiplier on curve value after walking (1.05–1.15).
+mulLo, mulHi = 1.05, 1.15
 
 
 class robobidder():
@@ -17,9 +13,24 @@ class robobidder():
         self.k = k
         self.b = b
         self.walk_time = 0.0
+        # Minutes banked from each human walking phase since this robot last won.
+        self.pendingWalkMinutes = 0.0
         # One-time noise sets each robot's personal k_i for the whole session.
         self.k_i = self.k + np.random.normal(loc=0, scale=0.025)
         self.robovalue = self.k_i
+
+    def bankWalkMinutes(self, duration):
+        """Accumulate uncredited walk time until this robot wins again."""
+        self.pendingWalkMinutes += max(0.0, float(duration))
+
+    def applyPendingWalk(self):
+        """Advance the bid curve by all banked walk time; reset the bank."""
+        dt = float(self.pendingWalkMinutes or 0.0)
+        if dt <= 0.0:
+            return 0.0
+        self.pendingWalkMinutes = 0.0
+        self.walk_for_duration(dt)
+        return dt
 
     def walk(self, walk_end_time, walk_start_time):
         """Advance along k_i*exp(b*t) by adding (walk_end_time - walk_start_time) to cumulative t."""
@@ -30,7 +41,7 @@ class robobidder():
         """Add ``duration`` (same units as ``b``, e.g. minutes) and set value on the curve."""
         self.walk_time += max(0.0, float(duration))
         base = self.k_i * np.exp(self.b * self.walk_time)
-        multiplier = float(truncnorm.rvs(mulA, mulB, loc=mulMu, scale=mulSigma))
+        multiplier = float(np.random.uniform(mulLo, mulHi))
         self.robovalue = base * multiplier
 
     def robobid(self):
@@ -48,6 +59,10 @@ class roboModel():
 
     def get_bids(self):
         return [rb.robobid() for rb in self.robobidderlist]
+
+    def bankWalkMinutesForAll(self, duration):
+        for rb in self.robobidderlist:
+            rb.bankWalkMinutes(duration)
 
     def name(self):
         modelName = "k: {:.4f}, b: {:.4f}, number of robobidders: {}"

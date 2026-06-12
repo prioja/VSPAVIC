@@ -28,20 +28,23 @@ from researchLink import sendMonitorEvent
 from roundedButton import RoundedButton
 
 
-def _current_round_number(st):
-    """
-    1-based round # for the on-screen timer.
-    Instant first bid has no timer; when the timer first appears it is Round 1
-    (one completed result -> Round 1, not Round 2).
-    """
+def _walking_round_number(st):
+    """1-based # during walking — last completed auction (bidding not open yet)."""
     if st is None:
         return 1
     return max(1, len(getattr(st, "results", []) or []))
 
 
+def _bidding_round_number(st):
+    """1-based # when keypad/SUBMIT are enabled — the auction being bid."""
+    if st is None:
+        return 1
+    return max(1, len(getattr(st, "results", []) or []) + 1)
+
+
 def _monitor_round_started_payload(st, controller=None):
-    """1-based round # for researcher monitor (matches on-screen timer)."""
-    n = _current_round_number(st)
+    """1-based round # for researcher monitor (matches on-screen timer when bidding opens)."""
+    n = _bidding_round_number(st)
     out = {
         "label": f"ROUND {n} STARTED",
         "roundNumber": n,
@@ -93,7 +96,7 @@ class BidScreen(Screen):
             orientation="vertical",
             size_hint=(None, None),
             spacing=6,
-            pos_hint={"x": 0.01, "y": 0.72},
+            pos_hint={"x": 0.015, "y": 0.7},
         )
         self.roundNumberLabel = PassthroughLabel(
             text="Round --:",
@@ -269,10 +272,9 @@ class BidScreen(Screen):
                 "roundIndex": getattr(st, "roundIndex", None) if st else None,
             },
         )
-        result = app.controller.finalizeRound()
-        print("Round finalized (instant first round):", result)
-        self.resetKeypad()
-        self.goToResult()
+        if not self._finalize_and_show_result(app):
+            return
+        print("Round finalized (instant first round)")
 
     def onSubmit(self, *_):
         app = App.get_running_app()
@@ -319,12 +321,34 @@ class BidScreen(Screen):
                     _monitor_round_started_payload(st, getattr(app, "controller", None)),
                 )
             print("Submitted (latest) bid:", bid)
+            remaining = app.controller.getSecondsRemaining()
+            if remaining is not None and remaining <= 0.0:
+                self._finalize_and_show_result(app)
         else:
             print("Submitted bid:", bid)
 
     def resetKeypad(self):
         self.cents = 0
         self.updateDisplay()
+
+    def _finalize_and_show_result(self, app):
+        """Finalize and open the result screen only after a bid was submitted."""
+        st = getattr(app, "state", None)
+        ctrl = getattr(app, "controller", None)
+        if ctrl is None or st is None or not ctrl.hasSubmittedBid():
+            return False
+
+        self.hasActiveRound = False
+        self.stopTicker()
+        self._set_timer_display(visible=False)
+        self._set_bid_inputs_enabled(False)
+        result = ctrl.finalizeRound()
+        if result is None:
+            return False
+        print("Round finalized:", result)
+        self.resetKeypad()
+        self.goToResult()
+        return True
 
     def goToResult(self):
         """Show results; rebuild ResultScreen so edits to resultScreen.py apply without restarting."""
@@ -556,14 +580,13 @@ class BidScreen(Screen):
             return
 
         ctrl = app.controller
-        rn = _current_round_number(st)
         walking_remaining = ctrl.getWalkingSecondsRemaining()
         if walking_remaining is not None:
             self._set_bid_inputs_enabled(False)
             self.hasActiveRound = True
             paused = bool(st is not None and getattr(st, "auctionPaused", False))
             self._set_timer_display(
-                rn,
+                _walking_round_number(st),
                 int(walking_remaining // 60),
                 int(walking_remaining % 60),
                 paused=paused,
@@ -574,6 +597,15 @@ class BidScreen(Screen):
                 st is not None and getattr(st, "auctionPaused", False)
             ):
                 self.hasActiveRound = False
+                if st is not None and getattr(st, "sessionClosingWalk", False):
+                    ctrl.finishSessionClosingWalk()
+                    self.stopTicker()
+                    self._set_timer_display(visible=False)
+                    self._set_bid_inputs_enabled(False)
+                    root = getattr(app, "root", None)
+                    if root is not None and hasattr(root, "has_screen") and root.has_screen("end"):
+                        root.current = "end"
+                    return
                 ctrl.onWalkingPhaseEnded()
                 self.hasActiveRound = True
                 self._sync_bid_screen_phase(app)
@@ -589,7 +621,7 @@ class BidScreen(Screen):
         self._set_bid_inputs_enabled(True)
         paused = bool(st is not None and getattr(st, "auctionPaused", False))
         self._set_timer_display(
-            rn,
+            _bidding_round_number(st),
             int(remaining // 60),
             int(remaining % 60),
             paused=paused,
@@ -600,14 +632,53 @@ class BidScreen(Screen):
         if remaining <= 0.0 and self.hasActiveRound and not (
             st is not None and getattr(st, "auctionPaused", False)
         ):
-            self.hasActiveRound = False
-            self.stopTicker()
+            if ctrl.hasSubmittedBid():
+                self._finalize_and_show_result(app)
+            else:
+                self._set_timer_display(
+                    _bidding_round_number(st),
+                    0,
+                    0,
+                    paused=False,
+                    visible=True,
+                )
+                self._set_bid_inputs_enabled(True)
+
+    def _refresh_timer_from_controller(self, app):
+        """Update round label + clock immediately (do not wait for the 0.1s ticker)."""
+        ctrl = getattr(app, "controller", None)
+        st = getattr(app, "state", None)
+        if ctrl is None:
+            return
+
+        if st is not None and getattr(st, "pendingInstantRound", False):
             self._set_timer_display(visible=False)
-            self._set_bid_inputs_enabled(False)
-            result = app.controller.finalizeRound()
-            print("Round finalized:", result)
-            self.resetKeypad()
-            self.goToResult()
+            return
+
+        paused = bool(st is not None and getattr(st, "auctionPaused", False))
+        walking_remaining = ctrl.getWalkingSecondsRemaining()
+        if walking_remaining is not None:
+            self._set_timer_display(
+                _walking_round_number(st),
+                int(walking_remaining // 60),
+                int(walking_remaining % 60),
+                paused=paused,
+                visible=True,
+            )
+            return
+
+        remaining = ctrl.getSecondsRemaining()
+        if remaining is not None:
+            self._set_timer_display(
+                _bidding_round_number(st),
+                int(remaining // 60),
+                int(remaining % 60),
+                paused=paused,
+                visible=True,
+            )
+            return
+
+        self._set_timer_display(visible=False)
 
     def _sync_bid_screen_phase(self, app):
         st = getattr(app, "state", None)
@@ -647,6 +718,7 @@ class BidScreen(Screen):
             self._set_bid_inputs_enabled(False)
             self._set_timer_display(visible=False)
 
+        self._refresh_timer_from_controller(app)
         self.updatePauseButton()
 
     def on_pre_enter(self, *_):

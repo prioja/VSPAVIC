@@ -22,7 +22,6 @@ class TreadmillHardware:
         walkSpeedMs=None,
         walkAccelMs2=0.1,
         stopAccelMs2=0.1,
-        defaultInclineDeg=7.0,  ###### update if needed
     ):
         self.viconPcIp = viconPcIp or os.environ.get("VSPA_BERTEC_IP", "141.212.77.30")
         if enabled is None:
@@ -38,7 +37,6 @@ class TreadmillHardware:
         self.walkSpeedMs = max(0.0, float(walkSpeedMs))
         self.walkAccelMs2 = walkAccelMs2
         self.stopAccelMs2 = stopAccelMs2
-        self.defaultInclineDeg = defaultInclineDeg
 
         self.bt = None
         self.lastConnectError = None
@@ -102,11 +100,6 @@ class TreadmillHardware:
         self.bt = None
         print("TreadmillHardware: disconnected.")
 
-    def setIncline(self, inclineDeg):
-        if not self.ensure_connected():
-            return
-        self.bt.write_command(speedR=0.0, speedL=0.0, incline=float(inclineDeg))
-
     def stopBelts(self):
         if not self.ensure_connected():
             return
@@ -153,7 +146,7 @@ class TreadmillHardware:
             return self.lastMotionState == "walking"
 
     def prepareSession(self):
-        """Belts stopped, incline set to default. Runs on a worker thread from the GUI."""
+        """Belts stopped, odometer reset. Runs on a worker thread from the GUI."""
         if not self.enabled:
             return
         if not self.ensure_connected(retries=3):
@@ -164,7 +157,6 @@ class TreadmillHardware:
                 self.bt.reset_odometer()
             except Exception as e:
                 print("TreadmillHardware: reset_odometer failed:", e)
-        self.setIncline(self.defaultInclineDeg)
         self.stopBelts()
         self.lastMotionState = "stopped"
 
@@ -233,17 +225,8 @@ def runTerminalDemo():
         print("Demo aborted (no Bertec connection).")
         return
 
-    TARGET_INCLINE = treadmill.defaultInclineDeg
     try:
-        print(f"--- Setting incline to {TARGET_INCLINE}° (belts stopped) ---")
-        treadmill.setIncline(TARGET_INCLINE)
-
-        print("Waiting for treadmill to reach target incline...")
-        while abs(treadmill.bt.incline - TARGET_INCLINE) > 0.1:
-            print(f"Current incline: {treadmill.bt.incline:.2f}°", end="\r")
-            time.sleep(0.5)
-        print(f"\nTarget incline reached ({TARGET_INCLINE}°).")
-
+        treadmill.prepareSession()
         print("\n--- STANDBY ---")
         input("Press ENTER when the participant is ready to start the belts...")
 
@@ -259,7 +242,7 @@ def runTerminalDemo():
             )
 
     except KeyboardInterrupt:
-        print("\n\nStopping belts (incline unchanged)...")
+        print("\n\nStopping belts...")
         treadmill.stopBelts()
         time.sleep(2)
 

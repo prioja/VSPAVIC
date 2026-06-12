@@ -44,6 +44,8 @@ class State:
 
         # Session end condition (configured in main.py)
         self.totalRounds = None
+        # After the final result: one last walking segment on the bid screen, then end.
+        self.sessionClosingWalk = False
 
         # Optional session timing config (randomized per session)
         self.totalAuctionSeconds = None

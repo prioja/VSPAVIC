@@ -1,5 +1,5 @@
 """
-Round outcome screen: logo + bid summary + GIF.
+Round outcome screen: logo + GIF + bid summary.
 Uses the same Label sizing pattern as endScreen.py (size_hint + text_size bind).
 """
 
@@ -15,8 +15,7 @@ from kivy.uix.screenmanager import Screen
 
 from gifWidget import PillowGifImage
 
-DETAIL_SUMMARY_FONT_SIZE = 125
-LOSE_TITLE_FONT_SIZE = 68
+DETAIL_SUMMARY_FONT_SIZE = 100
 
 
 def _centered_label(**kwargs):
@@ -39,42 +38,33 @@ class ResultScreen(Screen):
         content = BoxLayout(
             orientation="vertical",
             size_hint=(1, 1),
-            padding=[40, 120, 40, 40],
-            spacing=20,
+            padding=[40, 60, 50, 40],
+            spacing=0,
         )
 
         self.logoImage = Image(
             source="",
-            size_hint=(1, 0.15),
+            size_hint=(1, 0.4),
             pos_hint={"center_y": 1},
             allow_stretch=True,
             keep_ratio=True,
         )
 
-        self.messageStack = BoxLayout(orientation="vertical", size_hint=(1, 0.1))
-        self.loseTitle = _centered_label(
-            text="",
-            font_size=LOSE_TITLE_FONT_SIZE,
-            size_hint=(1, 1),
+        self.actionGif = PillowGifImage(
+            fps=12.0,
+            source="",
+            size_hint=(1, 0.5)
         )
-        self.messageStack.add_widget(self.loseTitle)
 
         self.detailLabel = _centered_label(
             text="",
             font_size=DETAIL_SUMMARY_FONT_SIZE,
-            size_hint=(1, 0.2),
-        )
-
-        self.actionGif = PillowGifImage(
-            fps=12.0,
-            source="",
-            size_hint=(1, 0.36),
+            size_hint=(1, 0.1),
         )
 
         content.add_widget(self.logoImage)
-        content.add_widget(self.messageStack)
-        content.add_widget(self.detailLabel)
         content.add_widget(self.actionGif)
+        content.add_widget(self.detailLabel)
 
         self._layout.add_widget(content)
 
@@ -82,7 +72,6 @@ class ResultScreen(Screen):
 
     def _apply_font_sizes(self):
         self.detailLabel.font_size = DETAIL_SUMMARY_FONT_SIZE
-        self.loseTitle.font_size = LOSE_TITLE_FONT_SIZE
 
     def on_leave(self, *_):
         self.cancelDismiss()
@@ -110,14 +99,11 @@ class ResultScreen(Screen):
 
         result = getattr(getattr(app, "state", None), "lastResult", None)
         humanWon = bool(result.get("humanWon")) if isinstance(result, dict) else False
-        humanParticipated = bool(result.get("humanParticipated", True)) if isinstance(result, dict) else True
 
         if humanWon:
             self.logoImage.source = str(figsDir / "won_logo.png")
             self.actionGif.opacity = 1
             self.actionGif.start(str(figsDir / "walking.gif"))
-            self.messageStack.size_hint_y = 0.001
-            self.messageStack.opacity = 0
         else:
             self.logoImage.source = str(figsDir / "lost_logo.png")
             sittingGif = figsDir / "sitting.gif"
@@ -127,14 +113,6 @@ class ResultScreen(Screen):
             else:
                 self.actionGif.stop()
                 self.actionGif.opacity = 0
-
-            if humanParticipated:
-                self.messageStack.size_hint_y = 0.001
-                self.messageStack.opacity = 0
-            else:
-                self.messageStack.size_hint_y = 0.1
-                self.messageStack.opacity = 1
-                self.loseTitle.text = "No bid was submitted before time expired."
 
         if isinstance(result, dict):
             lowest = result.get("lowestBid", None)
@@ -204,13 +182,13 @@ class ResultScreen(Screen):
         except Exception:
             totalRounds = None
 
-        if totalRounds is not None and totalRounds > 0 and st is not None and st.roundIndex >= (totalRounds - 1):
-            if hasattr(root, "has_screen") and root.has_screen("end"):
-                root.current = "end"
-            return
-
         if hasattr(root, "has_screen") and root.has_screen("bid"):
             ctrl = getattr(app, "controller", None)
-            if ctrl is not None:
+            if ctrl is not None and st is not None:
+                # All auctions done — show one last 2-min walk on the bid screen, then end.
+                if totalRounds is not None and totalRounds > 0 and not ctrl.hasMoreAuctions():
+                    st.sessionClosingWalk = True
+                else:
+                    st.sessionClosingWalk = False
                 ctrl.onReturningToBidAfterResult()
             root.current = "bid"

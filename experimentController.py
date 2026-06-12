@@ -155,12 +155,32 @@ class ExperimentController:
         else:
             _belt_commands()
 
+    def hasMoreAuctions(self):
+        total = getattr(self.state, "totalRounds", None)
+        if total is None or int(total) <= 0:
+            return True
+        return len(self.state.results or []) < int(total)
+
     def onReturningToBidAfterResult(self):
         """
         Leaving the result screen: ensure belt commands ran, then start walking phase.
         """
         self.applyTreadmillOutcomeForLastResult()
         self.beginWalkingPhase()
+
+    def finishSessionClosingWalk(self):
+        """End the final walking segment (no bid window) and prepare for the end screen."""
+        self.state.inWalkingPhase = False
+        self.state.walkingEndPerf = None
+        self.state.walkingStartPerf = None
+        self.state.sessionClosingWalk = False
+        self.state.auctionPaused = False
+        self.state.pauseRemainingSeconds = None
+        if self.hardware is not None:
+            try:
+                self.hardware.stopBelts()
+            except Exception as e:
+                print("ExperimentController: stop after closing walk failed:", e)
 
     def beginWalkingPhase(self):
         """Walk until roundSeconds elapses; then rest bid window begins (belts stopped)."""
@@ -178,6 +198,8 @@ class ExperimentController:
 
     def onWalkingPhaseEnded(self):
         """End walking segment, stop belts, open the 60s rest bid window."""
+        if getattr(self.state, "sessionClosingWalk", False):
+            return
         if self.state.walkingStartPerf is not None:
             walk_minutes = max(
                 0.0,
@@ -325,6 +347,9 @@ class ExperimentController:
             if 0 <= robo_idx < len(self.roboModel.robobidderlist):
                 self.roboModel.robobidderlist[robo_idx].applyPendingWalk()
 
+    def hasSubmittedBid(self):
+        return self.state.lastSubmittedBid is not None
+
     def finalizeRound(self):
         """
         Finalize one round using the LAST submitted human bid.
@@ -333,6 +358,8 @@ class ExperimentController:
         self.startIfNeeded()
         if self.state.roundStartPerf is None:
             raise RuntimeError("Round has not started yet. Call submitBidForCurrentRound() first.")
+        if not self.hasSubmittedBid():
+            return None
 
         roundEndPerf = time.perf_counter()
         roundEndTimestamp = datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")

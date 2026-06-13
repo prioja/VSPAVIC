@@ -69,8 +69,8 @@ class VSPAVicApp(App):
 
         # Randomize session duration (total bidding time) and derive totalRounds.
         # Hard-coded bounds (minutes). Adjust these two numbers as needed. Total auction time 50-70 minutes
-        minAuctionMinutes = 5 # 50
-        maxAuctionMinutes = 10 # 70
+        minAuctionMinutes = 50 # 50
+        maxAuctionMinutes = 70 # 70
         if self.controller.configureSessionTotalTimeSeconds(
             float(minAuctionMinutes) * 60.0,
             float(maxAuctionMinutes) * 60.0,

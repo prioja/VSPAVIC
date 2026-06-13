@@ -32,7 +32,7 @@ from datetime import datetime
 
 # Shown after total time / total rounds on `session_started` (monitor + JSON payload).
 SESSION_START_RESEARCHER_REMINDERS = (
-    "Please ensure COSMED mask is fitted.",
+    "Please ensure COSMED mask is fitted.","Please start heart rate monitor.","Please start Goniometers.",
 )
 
 

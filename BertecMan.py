@@ -1,5 +1,5 @@
 import socket
-from time import time
+from time import perf_counter, sleep, time
 from threading import Thread
 import numpy as np
 import struct
@@ -62,6 +62,10 @@ class Bertec:
 
         self.belt_speed = [0,0]
         self.incline = 0.0
+        # True after the reader thread parses at least one feedback packet.
+        self._feedback_received = False
+        # Incline (centidegrees) snapshotted once per session; never taken from live feedback again.
+        self._session_incline_centideg = None
 
         # Instantiate trapezoidal integrators to keep track of 
         self._distance_integrator = TrapezoidalIntegrator(self._calculate_absolute_velocity())
@@ -94,6 +98,7 @@ class Bertec:
             belt_speedL = int.from_bytes(data[3:5],'big', signed=True)/1000
             self.belt_speed = [belt_speedL, belt_speedR]
             self.incline = int.from_bytes(data[9:11],'big',signed=True)/100.0
+            self._feedback_received = True
             self._update_odometer()
 
     def _update_odometer(self):
@@ -135,6 +140,47 @@ class Bertec:
         self._distance_integrator.reset()
         self._elevation_integrator.reset()
 
+    def wait_for_feedback(self, timeout=2.0):
+        """Block until the reader has reported belt speed/incline, or timeout."""
+        deadline = perf_counter() + max(0.0, float(timeout))
+        while not self._feedback_received and perf_counter() < deadline:
+            sleep(0.02)
+        return self._feedback_received
+
+    @property
+    def session_incline_deg(self):
+        if self._session_incline_centideg is None:
+            return None
+        return self._session_incline_centideg / 100.0
+
+    def lock_session_incline(self, timeout=2.0):
+        """
+        Snapshot current deck incline for all later speed commands this session.
+
+        Call while the deck is unlocked and set on the Bertec GUI, before the
+        participant is on the treadmill. The app never intentionally changes incline.
+        """
+        if not self.wait_for_feedback(timeout):
+            print("Bertec: lock_session_incline failed (no feedback).")
+            return False
+        self._session_incline_centideg = round(abs(float(self.incline)) * 100)
+        print(
+            f"Bertec: session incline locked at {self.session_incline_deg:.2f}° "
+            f"({self._session_incline_centideg} centideg)"
+        )
+        return True
+
+    def _resolve_incline_centideg(self, incline_deg=None):
+        if incline_deg is not None:
+            return round(abs(float(incline_deg)) * 100)
+        if self._session_incline_centideg is not None:
+            return self._session_incline_centideg
+        if not self._feedback_received:
+            self.wait_for_feedback(timeout=2.0)
+        if not self._feedback_received:
+            return None
+        return round(abs(float(self.incline)) * 100)
+
     def write_command(self, speedR, speedL, incline = None, accR = 0.2, accL = 0.2, maxVel = BERTEC_MAX_VEL, minVel = -BERTEC_MAX_VEL):
         """
         Write speed to treadmill. Code adoptted from MATLAB Bertec GUI 
@@ -143,10 +189,13 @@ class Bertec:
         Input speedL, speedR, accR, accL, and incline in m/s, m/s^2, and deg
         """
 
-        if incline == None:
-            incline = abs(self.incline)
+        incline_centideg = self._resolve_incline_centideg(incline)
+        if incline_centideg is None:
+            print(
+                "Bertec: skipping command — no incline snapshot (would risk moving a locked deck)."
+            )
+            return
 
-        incline = incline * 100
         speedL = speedL*1000        # Speed in mm/s
         speedR = speedR*1000
 
@@ -164,7 +213,7 @@ class Bertec:
         accRR = 0
         accLL = 0
 
-        aux = int16toBytes([speedR, speedL, speedRR, speedLL, accR, accL, accRR, accLL, incline])
+        aux = int16toBytes([speedR, speedL, speedRR, speedLL, accR, accL, accRR, accLL, incline_centideg])
         secCheck = 255*np.ones((len(aux), ), dtype=int) - aux
         padding = np.zeros((27, ), dtype=int)
         fullPayload = [format, *aux, *secCheck, *padding]

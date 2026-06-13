@@ -103,6 +103,9 @@ class TreadmillHardware:
     def stopBelts(self):
         if not self.ensure_connected():
             return
+        if self.lastMotionState == "stopped" and not self.isWalking():
+            print("TreadmillHardware: stopBelts skipped (already stopped).")
+            return
         print("TreadmillHardware: COMMAND stopBelts()")
         self.bt.write_command(
             speedR=0.0,
@@ -146,7 +149,13 @@ class TreadmillHardware:
             return self.lastMotionState == "walking"
 
     def prepareSession(self):
-        """Belts stopped, odometer reset. Runs on a worker thread from the GUI."""
+        """
+        Connect, snapshot incline once, reset odometer.
+
+        Does NOT call stopBelts() — that would send an incline-bearing remote command
+        while the deck may already be locked with the participant about to step on.
+        Belts should already be stopped on the Bertec GUI before START.
+        """
         if not self.enabled:
             return
         if not self.ensure_connected(retries=3):
@@ -154,11 +163,25 @@ class TreadmillHardware:
             return
         if self.isConnected:
             try:
+                locked = self.bt.lock_session_incline(timeout=2.0)
+                if locked:
+                    deg = self.bt.session_incline_deg
+                    print(f"TreadmillHardware: incline locked for session at {deg:.2f}°")
+                else:
+                    print(
+                        "TreadmillHardware: incline not locked — belt commands will be "
+                        "skipped until Bertec feedback is available."
+                    )
+            except Exception as e:
+                print("TreadmillHardware: lock_session_incline failed:", e)
+            try:
                 self.bt.reset_odometer()
             except Exception as e:
                 print("TreadmillHardware: reset_odometer failed:", e)
-        self.stopBelts()
-        self.lastMotionState = "stopped"
+        if self.isConnected and self.isWalking():
+            self.lastMotionState = "walking"
+        else:
+            self.lastMotionState = "stopped"
 
     def prepareSession_async(self):
         """Non-blocking version for START — avoids freezing if Bertec is unreachable."""
@@ -227,6 +250,8 @@ def runTerminalDemo():
 
     try:
         treadmill.prepareSession()
+        if treadmill.isConnected and treadmill.bt.session_incline_deg is not None:
+            print(f"Incline locked at {treadmill.bt.session_incline_deg:.2f}°")
         print("\n--- STANDBY ---")
         input("Press ENTER when the participant is ready to start the belts...")
 
